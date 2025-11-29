@@ -1,0 +1,5 @@
+{
+  "name": "ChainFlow AI Sheets的存档",
+  "description": "A spreadsheet-like tool where column B generates column A using AI. Supports Gemini and Local LLMs.",
+  "requestFramePermissions": []
+}
