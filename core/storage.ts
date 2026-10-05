@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { topological } from './graph';
 import { emptyCell, type Sheet } from './types';
-const column=z.object({id:z.string().min(1).max(80),name:z.string().min(1).max(80),sources:z.array(z.string()).max(30),prompt:z.string().max(12000),model:z.string().regex(/^[a-zA-Z0-9._:/-]{1,100}$/),maxTokens:z.number().int().min(64).max(4096),reasoning:z.enum(['none','low','medium','high']),check:z.boolean(),minLength:z.number().int().min(1).max(10000),containsSource:z.boolean()});
+const column=z.object({id:z.string().min(1).max(80),name:z.string().min(1).max(80),sources:z.array(z.string()).max(30),prompt:z.string().max(12000),model:z.string().regex(/^[a-zA-Z0-9._:/-]{1,100}$/),maxTokens:z.number().int().min(64).max(4096),reasoning:z.enum(['none','low','medium','high']),check:z.boolean(),minLength:z.number().int().min(1).max(10000),containsSource:z.boolean(),ttsLanguage:z.enum(['off','ja','en','en-gb','zh']).default('off')});
 const schema=z.object({version:z.literal(1),name:z.string().max(100),columns:z.array(column).min(1).max(30),rows:z.array(z.object({id:z.string().min(1).max(80),cells:z.record(z.object({value:z.string().max(32000),status:z.enum(['idle','queued','running','done','error','cancelled','stale']),revision:z.number().int().nonnegative().optional()}))})).max(500)});
 export function parseSheet(raw:unknown):Sheet {
   const data=schema.parse(raw);topological(data.columns);
@@ -14,7 +14,7 @@ export function parseSheet(raw:unknown):Sheet {
   }))}))};
 }
 export function serialize(sheet:Sheet):string {
-  return JSON.stringify({version:1,name:sheet.name,columns:sheet.columns.map(c=>({id:c.id,name:c.name,sources:c.sources,prompt:c.prompt,model:c.model,maxTokens:c.maxTokens,reasoning:c.reasoning,check:c.check,minLength:c.minLength,containsSource:c.containsSource})),rows:sheet.rows.map(r=>({id:r.id,cells:Object.fromEntries(sheet.columns.map(c=>[c.id,{value:r.cells[c.id].value,status:r.cells[c.id].status}]))}))},null,2);
+  return JSON.stringify({version:1,name:sheet.name,columns:sheet.columns.map(c=>({id:c.id,name:c.name,sources:c.sources,prompt:c.prompt,model:c.model,maxTokens:c.maxTokens,reasoning:c.reasoning,check:c.check,minLength:c.minLength,containsSource:c.containsSource,ttsLanguage:c.ttsLanguage??'off'})),rows:sheet.rows.map(r=>({id:r.id,cells:Object.fromEntries(sheet.columns.map(c=>[c.id,{value:r.cells[c.id].value,status:r.cells[c.id].status}]))}))},null,2);
 }
 export function csv(sheet:Sheet):string {
   const quote=(s:string)=>'"'+(/^[=+@\-\t\r]/.test(s)?"'":"")+s.replaceAll('"','""')+'"';

@@ -15,6 +15,8 @@ npm run dev -- --host 127.0.0.1 --port 3002
 
 访问 http://127.0.0.1:3002 。开发服务器保持运行时才能访问。终端 Ctrl+C 停止。本地默认端口为 3002，为 Docker Homepage 留出 3000；端口被占用时会报错，不会自动跳到别的端口。
 
+换 Wi-Fi 不影响 `127.0.0.1` 或 `localhost`，两者都指向本机。不过浏览器将它们视为不同站点，各自保存表格、凭证和 TTS 配置；日常保持使用 `http://127.0.0.1:3002`，避免切换地址后看到另一份浏览器数据。
+
 需要在退出 Codex 后继续预览时，在项目目录执行 `npm run preview:background`，它启动独立后台进程，日志在忽略的 `outputs/preview.log`；已有本应用预览时不会重复启动。后台进程仅本地开发使用，Mac 重启后需重新启动。
 
 ### 用 LaunchManager 管理 Mac 服务
@@ -53,6 +55,7 @@ CHAINFLOW_DEV_PROXY=http://127.0.0.1:7897 npm run dev -- --host 127.0.0.1 --port
 - 生成状态：待运行、排队、生成中、完成、失败、已取消、需要更新。
 - 本地浏览器保存、JSON 导入导出、CSV 导出（防止常见表格公式注入）。
 - 中文桌面宽表格及窄屏横向表格滚动；执行记录含每次实际调用的耗时和 tokens。
+- 本地 Kokoro TTS：独立配置 API、音色与语速；每列选择朗读语言，单元格一键朗读、停止或切换，无音频文件缓存。
 
 上限：500 行、30 列；输入/输出单元格 32000 字符；单列提示词 12000 字符；输出 64–4096 tokens；并发 1–3。
 
@@ -78,6 +81,18 @@ Mac 本地开发时，Agent 模式使用官方 Codex App Server 与本机 ChatGP
 
 公开 Sites 构建的 capabilities 始终为 `codex:false`，不注册上述入口；公开 Agent 仍需访客自己的 API key。Node 进程调用代码只存在于 `build/codex-*.ts` 等开发工具，不进入部署 Worker。
 
+## 本地 Kokoro TTS
+
+先在 LaunchManager 启动已有的 Kokoro 服务，再点击首页「配置 TTS」。本机默认地址为 `http://127.0.0.1:8880/v1`，模型为 `kokoro`，语速为 1；也可填写完整 `/v1/audio/speech` 地址。这里只接受本机回环地址，不需要或传递 API key。点击「测试连接」读取服务提供的音色列表，不生成音频。本机已验证返回 41 个可用音色。
+
+每个列标题下方和列设置中都有朗读语言选择，包括输入列。支持不朗读、日语、美式英语、英式英语和中文；默认音色分别为 `jf_alpha`、`af_heart`、`bf_emma`、`zf_xiaobei`，可在 TTS 配置中调整。当前四列表格为 A/B 日语、C 不朗读、D 美式英语。旧表格首次迁移采用这个列位置规则；明确选择过的语言始终保留，新建列默认不朗读。改语言不会让已有 AI 结果需要更新，也不会调用模型。
+
+点击单元格「朗读」后，文字通过本地同源接口送到 Kokoro，短暂合成后自动播放；该 Kokoro 接口返回完整 WAV，目前不支持边生成边播放。每次点击重新合成，音频只放在服务端及浏览器内存中，不写文件、localStorage 或导出内容；播放结束、停止、切换单元格或修改被朗读文字后释放当前 Blob URL。同一时间只播放一段音频，取消后迟到的响应不会播放。浏览器若限制自动播放，会显示「点击播放」，该操作直接播放已就绪的当前音频，不重复合成。
+
+单次最多 4096 个字符，服务端最多一个合成请求、90 秒超时，并限制返回音频大小；失败有明确提示，可以再次点击。停止会取消网络等待和播放，但已经进入 Kokoro 的模型推理仍可能在服务里完成。朗读与 AI 调度独立，不改变生成计数，不消费 OpenAI API 或 Codex 额度。TTS 地址、音色、语速保存在浏览器独立设置项；列语言随表格 JSON 保存和导出。
+
+本地入口是 `POST /api/local-tts/voices`、`POST /api/local-tts/speech`，校验回环来源、Host、同源 Origin、JSON 参数、大小和目标地址，拒绝凭证、远程目标、额外参数和重定向；响应禁止缓存。公开 Sites 构建固定为 `tts:false`，不注册这些入口，因为部署服务器不能访问访客 Mac 上的 Kokoro。公开版保留列语言和配置界面说明，但本机朗读按钮不可用；本功能面向 Mac 本地运行。
+
 ## 架构
 
 - `core/types.ts`：表格、列、单元格、运行与用量数据。
@@ -87,6 +102,9 @@ Mac 本地开发时，Agent 模式使用官方 Codex App Server 与本机 ChatGP
 - `core/storage.ts`：显式保存白名单、导入校验、状态恢复、CSV。
 - `model/client.ts`：浏览器同源请求与结构化错误。
 - `model/credentials.ts`：提供商、连接设置及可选浏览器凭证记忆，与表格保存隔离。
+- `core/tts.ts` / `model/tts.ts`：列语言、TTS 配置校验及可取消的内存音频播放。
+- `components/tts-settings.tsx`：TTS 连接测试、音色与语速配置。
+- `build/local-tts-http.ts`：仅本地的 Kokoro 请求转发、并发、超时和二进制音频响应。
 - `core/example-workflow.ts`：用户批准的两行提示词与已完成结果，无密钥。
 - `server/targets.ts`：受审阅的域名、HTTPS/路径验证与协议选择。
 - `modes/api.ts` / `modes/agent.ts`：两种清楚分离的执行策略。
@@ -119,7 +137,7 @@ npm test
 npm run build
 ```
 
-51 项核心/服务端/凭证/示例/本地 Agent 测试通过。当前本机页面验收使用 Codex 自带浏览器，避免在 macOS Dock 产生多个 Chrome 实例。此前的 4 项 Playwright 自动化界面测试已通过；保留 `npm run test:ui` 仅作为未来 CI 的可选入口，本机不自动运行。CI 如需运行，可修改配置并使用项目内浏览器：
+63 项核心/服务端/凭证/示例/本地 Agent/TTS 测试通过。TTS 测试覆盖目标限制、同源与参数验证、二进制音频、并发与超时、取消和旧响应隔离、播放失败、Blob URL 释放，以及公开版关闭本地入口。当前本机页面验收使用 Codex 自带浏览器，已验证真实 Kokoro 日语/英语播放、停止、失败提示和桌面/手机布局，原表格提示词与结果保留。此前的 4 项 Playwright 自动化界面测试已通过；保留 `npm run test:ui` 仅作为未来 CI 的可选入口，本机不自动运行。CI 如需运行，可修改配置并使用项目内浏览器：
 
 ```sh
 PLAYWRIGHT_BROWSERS_PATH=.cache/ms-playwright ./node_modules/.bin/playwright install chromium
