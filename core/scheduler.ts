@@ -101,7 +101,7 @@ export class Scheduler {
     };
     try{
       if(!input.trim())throw new Error('来源内容为空，请先填写输入');if(!col.prompt.trim())throw new Error('请先配置列提示词');
-      const expanded=buildPrompts(col,promptContext(this.sheet,task.row,col,this.recentResults(task.row,col.id)),task.avoidResults??[]);
+      const expanded=buildPrompts(col,promptContext(this.sheet,task.row,col,this.recentResults(task.row,col.id)));
       const generationColumn={...col,prompt:expanded.prompt};
       const result=task.options.mode==='agent'?await runAgent(generationColumn,expanded.input,sourceValues,guarded,controller.signal,{maxRetries:task.options.autoRetry===false?0:task.options.maxRetries,record,claim:()=>{if(Date.now()>=task.batch.deadline)throw new Error('已达到运行时间上限');if(task.batch.steps>=task.options.maxSteps)throw new Error('已达到 Agent 最大调用步数');task.batch.steps++;}}):await record(task.attempt?`API 生成 · 自动重试 ${task.attempt}/${task.options.apiMaxRetries}`:'API 生成',()=>runApi(generationColumn,expanded.input,guarded,controller.signal));
       if(task.avoidResults){task.variantUsage={input:(task.variantUsage?.input??0)+result.usage.input,output:(task.variantUsage?.output??0)+result.usage.output};if(repeatedResult(result.text,task.avoidResults))throw new ModelError('模型仍返回与已有结果相同的例句；原结果已保留', 'repeated_output', true);}

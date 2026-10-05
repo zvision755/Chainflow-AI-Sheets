@@ -1,11 +1,10 @@
 import { ModelError } from '../model/client';
-import { freshPrompt } from './fresh-results';
 import type { Column, Sheet } from './types';
 
 export const promptTemplates = [
   {key:'text',name:'来源内容',description:'所选来源列的内容；多个来源按列名拼接'},
   {key:'existing_result',name:'已有结果',description:'当前格子在本次请求前的结果；首次运行为空'},
-  {key:'recent_results',name:'最近结果',description:'当前格子最近 5 条结果的 JSON 数组，包含已有结果；会话历史不持久保存'},
+  {key:'recent_results',name:'最近结果',description:'最多 5 条，JSON 总长最多 10000 字符；仅使用此模板时发送，不持久保存历史'},
   {key:'timestamp',name:'当前时间',description:'请求发出时的 UTC 时间，精确到秒'},
   {key:'request_id',name:'请求 ID',description:'每次请求唯一；同一秒内也不同'},
   {key:'row_number',name:'行号',description:'从 1 开始的当前行号'},
@@ -27,8 +26,13 @@ export function promptContext(sheet:Sheet,rowId:string,column:Column,history:str
   const current=row.cells[column.id]?.value??'';
   // Bound history text without persisting any expanded prompt or request metadata.
   const recent=Array.from(new Set([...history,current].filter(value=>value.trim()))).slice(-5);
-  let budget=10000;
-  const excerpts=[...recent].reverse().map(value=>{let excerpt=value;while(JSON.stringify(excerpt).length>budget&&excerpt.length)excerpt=excerpt.slice(0,Math.floor(excerpt.length*.8));budget-=JSON.stringify(excerpt).length;return excerpt;}).filter(Boolean).reverse();
+  const excerpts:string[]=[];
+  for(const value of [...recent].reverse()){
+    let excerpt=value;
+    while(JSON.stringify([excerpt,...excerpts]).length>10000&&excerpt.length)excerpt=excerpt.slice(0,Math.floor(excerpt.length*.8));
+    if(!excerpt)break;
+    excerpts.unshift(excerpt);
+  }
   return {text:text??'',existing_result:current,recent_results:JSON.stringify(excerpts),timestamp:now.toISOString().replace(/\.\d{3}Z$/,'Z'),request_id:requestId,row_number:String(index+1),column_name:column.name};
 }
 export function expandPrompt(template:string,context:PromptContext,limit:number,field:string):string {
@@ -41,8 +45,8 @@ export function expandPrompt(template:string,context:PromptContext,limit:number,
   if(expanded.length>limit)throw new ModelError(`${field}展开后超过 ${limit} 字符，请缩短提示词或来源内容`,'prompt_size');
   return expanded;
 }
-export function buildPrompts(column:Column,context:PromptContext,avoidResults:string[]=[]) {
+export function buildPrompts(column:Column,context:PromptContext) {
   const system=expandPrompt(column.prompt,context,12000,'系统提示词');
   const input=expandPrompt(column.userPrompt??'{{text}}',context,32000,'用户提示词');
-  return {prompt:column.freshResults?freshPrompt(system,avoidResults,context.request_id,new Date(context.timestamp)):system,input};
+  return {prompt:system,input};
 }

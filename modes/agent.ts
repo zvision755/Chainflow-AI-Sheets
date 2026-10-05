@@ -6,7 +6,7 @@ export async function runAgent(column:Column,input:string,sourceValues:string[],
   for(let attempt=0;attempt<=ctx.maxRetries;attempt++){
     if(signal.aborted)throw new Error('已停止');
     try{
-      ctx.claim();const result=await ctx.record(attempt?'修正结果':'生成结果',()=>generate({model:column.model,prompt:column.prompt+(feedback?`\n请修正上次结果的问题：${feedback}`:''),input,maxTokens:column.maxTokens,reasoning:column.reasoning},signal));
+      ctx.claim();const result=await ctx.record(attempt?'修正结果':'生成结果',()=>generate({model:column.model,prompt:column.prompt,input:input+(feedback?`\n请修正上次结果的问题：${feedback}`:''),maxTokens:column.maxTokens,reasoning:column.reasoning},signal));
       usage.input+=result.usage.input;usage.output+=result.usage.output;
       const issues:string[]=[];
       if(result.text.trim().length<column.minLength)issues.push(`输出至少需要 ${column.minLength} 个字符`);
