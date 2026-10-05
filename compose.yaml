@@ -1,0 +1,32 @@
+name: chainflow
+services:
+  app:
+    image: chainflow-ai-sheets:local
+    build:
+      context: .
+      args:
+        HTTP_PROXY: "${CHAINFLOW_HTTP_PROXY:-}"
+        HTTPS_PROXY: "${CHAINFLOW_HTTP_PROXY:-}"
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${CHAINFLOW_PORT:-3003}:8080"
+    environment:
+      CHAINFLOW_CODEX_ENABLED: "${CHAINFLOW_CODEX_ENABLED:-true}"
+      CHAINFLOW_HTTP_PROXY: "${CHAINFLOW_HTTP_PROXY:-}"
+    volumes:
+      - codex-login:/data/codex
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  codex-login:

@@ -1,0 +1,34 @@
+# Allowlist: personal test text, credentials, browser backups and tool state
+# cannot enter any image layer, even accidentally.
+*
+!Dockerfile
+!package.json
+!package-lock.json
+!next.config.ts
+!postcss.config.mjs
+!tsconfig.json
+!app/
+!app/**
+!components/
+!components/**
+!core/
+!core/**
+!model/
+!model/**
+!modes/
+!modes/**
+!server/
+!server/**
+!build/
+!build/**
+!lib/
+!lib/**
+!public/
+!public/**
+!docker/
+!docker/**
+**/.env*
+**/auth.json
+**/*.txt
+**/*.log
+**/*.pem
