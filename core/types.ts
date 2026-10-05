@@ -2,7 +2,11 @@ export type Status = 'idle' | 'queued' | 'running' | 'done' | 'error' | 'cancell
 export type Cell = { value: string; status: Status; revision: number; error?: string; elapsed?: number; usage?: Usage; completedAt?: number };
 export type Usage = { input: number; output: number };
 import type { TtsLanguage } from './tts';
-export type Column = { id: string; name: string; sources: string[]; prompt: string; model: string; maxTokens: number; reasoning: 'none'|'low'|'medium'|'high'; check: boolean; minLength: number; containsSource: boolean; ttsLanguage?: TtsLanguage };
+export type Column = { id: string; name: string; sources: string[]; prompt: string; model: string; maxTokens: number; reasoning: 'none'|'low'|'medium'|'high'; check: boolean; minLength: number; containsSource: boolean; ttsLanguage?: TtsLanguage; width?: number };
+export const MIN_COLUMN_WIDTH = 180;
+export const MAX_COLUMN_WIDTH = 1200;
+export const defaultColumnWidth = (index: number) => [180, 260, 520, 300][index] ?? 330;
+export const columnWidth = (column: Column, index: number) => column.width ?? defaultColumnWidth(index);
 export type Row = { id: string; cells: Record<string, Cell> };
 export type Sheet = { version: 1; name: string; columns: Column[]; rows: Row[] };
 export type GenerateInput = { model: string; prompt: string; input: string; maxTokens: number; reasoning: Column['reasoning'] };
