@@ -3,12 +3,15 @@ import { emptyCell, id, type Sheet, type Column, type Generate, type RunOptions,
 import { runApi } from '../modes/api';
 import { runAgent } from '../modes/agent';
 import { ModelError } from '../model/client';
-type Task={row:string;column:string;revision:number;attempt:number;retryAt:number;options:RunOptions;batch:Batch};
+import { repeatedResult } from './fresh-results';
+import { buildPrompts, promptContext, validatePromptTemplates } from './prompt-templates';
+type Task={row:string;column:string;revision:number;attempt:number;retryAt:number;options:RunOptions;batch:Batch;avoidResults?:string[];duplicateRetries?:number;variantUsage?:{input:number;output:number}};
 type Batch={steps:number;deadline:number;timer:ReturnType<typeof setTimeout>|null;columnCompletedAt:Map<string,number>};
 export class Scheduler {
   sheet:Sheet;steps:Step[]=[];
   private queue=new Map<string,Task>();private active=new Map<string,{task:Task;controller:AbortController}>();
   private listeners=new Set<()=>void>();private version=0;private wakeTimer:ReturnType<typeof setTimeout>|null=null;
+  private resultHistory=new Map<string,string[]>();
   constructor(sheet:Sheet,private generate:Generate){this.sheet=sheet;}
   setGenerate(generate:Generate){if(!this.busy)this.generate=generate;}
   subscribe=(cb:()=>void)=>{this.listeners.add(cb);return ()=>this.listeners.delete(cb);};
@@ -25,7 +28,9 @@ export class Scheduler {
     const todo=plan(this.sheet,targets,force);const batch:Batch={steps:0,deadline:Date.now()+options.totalTimeout,timer:null,columnCompletedAt:new Map()};
     const limit={...options,autoRetry:options.autoRetry!==false,apiMaxRetries:Math.max(0,Math.min(3,options.apiMaxRetries??2)),retryDelayMs:Math.max(10,Math.min(30000,options.retryDelayMs??2000)),dependencyDelayMs:Math.max(0,Math.min(60000,options.dependencyDelayMs??500)),concurrency:Math.max(1,Math.min(3,options.concurrency)),maxRetries:Math.max(0,Math.min(2,options.maxRetries)),maxSteps:Math.max(1,Math.min(3000,options.maxSteps)),timeout:Math.max(1000,Math.min(120000,options.timeout))};
     for(const t of todo){const key=this.key(t.row,t.column);if(this.queue.has(key)||this.active.has(key))continue;
-      const cell=this.cell(t.row,t.column)!;cell.status='queued';delete cell.error;this.queue.set(key,{...t,revision:cell.revision,attempt:0,retryAt:0,options:limit,batch});}
+      const cell=this.cell(t.row,t.column)!,column=this.sheet.columns.find(c=>c.id===t.column)!;
+      const avoidResults=force&&column.freshResults&&targets.some(target=>target.row===t.row&&target.column===t.column)&&cell.value.trim()?Array.from(new Set([...(this.resultHistory?.get(key)??[]),cell.value])).slice(-5):undefined;
+      cell.status='queued';delete cell.error;this.queue.set(key,{...t,revision:cell.revision,attempt:0,retryAt:0,options:limit,batch,avoidResults});}
     if([...this.queue.values()].some(t=>t.batch===batch))batch.timer=setTimeout(()=>this.stopBatch(batch,'已达到整次运行的时间上限'),options.totalTimeout);
     this.emit();this.pump();
   }
@@ -38,7 +43,7 @@ export class Scheduler {
   stop(){for(const batch of new Set([...this.queue.values(),...[...this.active.values()].map(a=>a.task)].map(t=>t.batch)))this.stopBatch(batch,'已停止；已提交给提供商的请求仍可能计费');}
   private invalidate(row:string,columns:Set<string>){
     const batches=new Set<Batch>();
-    for(const col of columns){const key=this.key(row,col),c=this.cell(row,col);if(!c)continue;c.revision++;c.status='stale';delete c.error;delete c.completedAt;
+    for(const col of columns){const key=this.key(row,col),c=this.cell(row,col);if(!c)continue;this.resultHistory?.delete(key);c.revision++;c.status='stale';delete c.error;delete c.completedAt;
       const t=this.queue.get(key);if(t){batches.add(t.batch);this.queue.delete(key);}this.active.get(key)?.controller.abort();}
     batches.forEach(b=>this.cleanupBatch(b));
   }
@@ -49,7 +54,8 @@ export class Scheduler {
     const existing=this.sheet.columns.find(c=>c.id===column.id);if(!existing)throw new Error('列不存在');
     const columns=this.sheet.columns.map(c=>c.id===column.id?column:c);topological(columns);
     if(column.id!==columns[0].id&&!column.sources.length)throw new Error('请至少选择一个来源列');
-    const changed=['sources','prompt','model','maxTokens','reasoning','check','minLength','containsSource'].some(k=>JSON.stringify(existing[k as keyof Column])!==JSON.stringify(column[k as keyof Column]));
+    if(column.id!==columns[0].id)validatePromptTemplates(column);
+    const changed=['sources','prompt','userPrompt','model','maxTokens','reasoning','check','minLength','containsSource'].some(k=>JSON.stringify(existing[k as keyof Column])!==JSON.stringify(column[k as keyof Column]));
     this.sheet.columns=columns;if(changed)this.sheet.rows.forEach(r=>this.invalidate(r.id,new Set([column.id,...descendants(columns,column.id)])));this.emit();this.pump();
   }
   invalidateGeneratedResults(){if(this.busy)throw new Error('请先停止运行再切换 Agent 模型');const generated=new Set(this.sheet.columns.slice(1).map(c=>c.id));this.sheet.rows.forEach(row=>this.invalidate(row.id,generated));this.emit();}
@@ -58,7 +64,8 @@ export class Scheduler {
   moveColumn(col:string,delta:number){const cols=[...this.sheet.columns],i=cols.findIndex(c=>c.id===col),j=i+delta;if(i<1||j<1||j>=cols.length)return;[cols[i],cols[j]]=[cols[j],cols[i]];this.sheet.columns=cols;this.emit();}
   addRow(copy?:string){const source=this.sheet.rows.find(r=>r.id===copy);this.sheet.rows.push({id:id(),cells:Object.fromEntries(this.sheet.columns.map((c,i)=>[c.id,emptyCell(source?.cells[c.id].value??'',i===0?'done':source?.cells[c.id].value?'stale':'idle')]))});this.emit();}
   removeRow(row:string){this.invalidate(row,new Set(this.sheet.columns.map(c=>c.id)));this.sheet.rows=this.sheet.rows.filter(r=>r.id!==row);this.emit();this.pump();}
-  replace(sheet:Sheet){if(this.busy)throw new Error('请先停止运行，等待计数回到 0');this.sheet=sheet;this.steps=[];this.emit();}
+  recentResults(row:string,column:string){return [...(this.resultHistory?.get(this.key(row,column))??[])];}
+  replace(sheet:Sheet){if(this.busy)throw new Error('请先停止运行，等待计数回到 0');this.sheet=sheet;this.steps=[];this.resultHistory?.clear();this.emit();}
   private pump(){
     if(this.wakeTimer){clearTimeout(this.wakeTimer);this.wakeTimer=null;}
     let changed=false,nextWake=Infinity;
@@ -94,12 +101,16 @@ export class Scheduler {
     };
     try{
       if(!input.trim())throw new Error('来源内容为空，请先填写输入');if(!col.prompt.trim())throw new Error('请先配置列提示词');
-      const result=task.options.mode==='agent'?await runAgent(col,input,sourceValues,guarded,controller.signal,{maxRetries:task.options.autoRetry===false?0:task.options.maxRetries,record,claim:()=>{if(Date.now()>=task.batch.deadline)throw new Error('已达到运行时间上限');if(task.batch.steps>=task.options.maxSteps)throw new Error('已达到 Agent 最大调用步数');task.batch.steps++;}}):await record(task.attempt?`API 生成 · 自动重试 ${task.attempt}/${task.options.apiMaxRetries}`:'API 生成',()=>runApi(col,input,guarded,controller.signal));
+      const expanded=buildPrompts(col,promptContext(this.sheet,task.row,col,this.recentResults(task.row,col.id)),task.avoidResults??[]);
+      const generationColumn={...col,prompt:expanded.prompt};
+      const result=task.options.mode==='agent'?await runAgent(generationColumn,expanded.input,sourceValues,guarded,controller.signal,{maxRetries:task.options.autoRetry===false?0:task.options.maxRetries,record,claim:()=>{if(Date.now()>=task.batch.deadline)throw new Error('已达到运行时间上限');if(task.batch.steps>=task.options.maxSteps)throw new Error('已达到 Agent 最大调用步数');task.batch.steps++;}}):await record(task.attempt?`API 生成 · 自动重试 ${task.attempt}/${task.options.apiMaxRetries}`:'API 生成',()=>runApi(generationColumn,expanded.input,guarded,controller.signal));
+      if(task.avoidResults){task.variantUsage={input:(task.variantUsage?.input??0)+result.usage.input,output:(task.variantUsage?.output??0)+result.usage.output};if(repeatedResult(result.text,task.avoidResults))throw new ModelError('模型仍返回与已有结果相同的例句；原结果已保留', 'repeated_output', true);}
       const cell=this.cell(task.row,task.column);
       if(cell&&cell.revision===task.revision&&!controller.signal.aborted){
         if(cell.value!==result.text){const affected=descendants(this.sheet.columns,task.column);for(const d of affected){const downstream=this.cell(task.row,d);if(downstream&&downstream.status!=='queued')this.invalidate(task.row,new Set([d]));}}
         const completedAt=Date.now();task.batch.columnCompletedAt.set(col.id,completedAt);
-        Object.assign(cell,{value:result.text,status:'done',completedAt,elapsed:Date.now()-started,usage:result.usage});delete cell.error;
+        Object.assign(cell,{value:result.text,status:'done',completedAt,elapsed:Date.now()-started,usage:task.variantUsage??result.usage});delete cell.error;
+        {this.resultHistory??=new Map();const history=this.recentResults(task.row,col.id);this.resultHistory.delete(key);this.resultHistory.set(key,Array.from(new Set([...history,...(task.avoidResults??[]),result.text])).slice(-5));if(this.resultHistory.size>100)this.resultHistory.delete(this.resultHistory.keys().next().value!);}
       }
     }catch(error){
       const cell=this.cell(task.row,task.column);
@@ -107,9 +118,11 @@ export class Scheduler {
         const message=timedOut?`请求超过 ${task.options.timeout/1000} 秒，已终止`:controller.signal.aborted?'请求已取消':error instanceof Error?error.message:'未知错误';
         const retryable=timedOut||(!controller.signal.aborted&&error instanceof ModelError&&error.retryable);
         const delay=Math.min(60000,(task.options.retryDelayMs??2000)*2**task.attempt);
-        if(task.options.autoRetry!==false&&retryable&&task.attempt<(task.options.apiMaxRetries??2)&&Date.now()+delay<task.batch.deadline){
+        const repeated=error instanceof ModelError&&error.code==='repeated_output';
+        if(task.options.autoRetry!==false&&retryable&&(!repeated||(task.duplicateRetries??0)<1)&&task.attempt<(task.options.apiMaxRetries??2)&&Date.now()+delay<task.batch.deadline){
+          if(repeated)task.duplicateRetries=(task.duplicateRetries??0)+1;
           task.attempt++;task.retryAt=Date.now()+delay;cell.status='queued';cell.error=`${message}；${delay/1000} 秒后自动重试（${task.attempt}/${task.options.apiMaxRetries??2}）`;this.queue.set(key,task);
-        }else{cell.status=controller.signal.aborted&&!timedOut?'cancelled':'error';cell.error=message+(retryable&&task.options.autoRetry!==false?`；已停止自动重试（最多 ${task.options.apiMaxRetries??2} 次，受总时限限制）`:'');}
+        }else{cell.status=controller.signal.aborted&&!timedOut?'cancelled':'error';cell.error=message+(repeated?'；重复结果最多额外尝试 1 次，已停止（受自动重试设置及总时限限制）':retryable&&task.options.autoRetry!==false?`；已停止自动重试（最多 ${task.options.apiMaxRetries??2} 次，受总时限限制）`:'');}
         cell.elapsed=Date.now()-started;
       }
     }
