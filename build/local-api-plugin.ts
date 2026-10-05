@@ -2,6 +2,7 @@
 import type { Plugin } from 'vite';
 import { execFileSync } from 'node:child_process';
 import { ProxyAgent } from 'undici';
+import { Readable } from 'node:stream';
 import { json, proxy } from '../server/proxy';
 import { join } from 'node:path';
 import { CodexBridge } from './codex-bridge';
@@ -35,8 +36,11 @@ export function localApi(): Plugin {
         const response=path?.startsWith('/api/local-tts/') ? await tts(request,path.endsWith('/voices')?'voices':'speech') : path?.startsWith('/api/local-agent/')
           ? await localAgentRequest(request,path.endsWith('/status')?'status':'generate',codex)
           : await proxy(request,path==='/api/generate'?'generate':'models',forward);
-        res.statusCode=response.status;response.headers.forEach((v,k)=>res.setHeader(k,v));res.end(Buffer.from(await response.arrayBuffer()));
-      }catch{const response=json({error:{code:'local_network',message:'本地网络请求失败，请检查系统代理设置',retryable:true}},502);if(!res.writableEnded){res.statusCode=response.status;response.headers.forEach((v,k)=>res.setHeader(k,v));res.end(await response.text());}}
+        res.statusCode=response.status;response.headers.forEach((v,k)=>res.setHeader(k,v));
+        if(!response.body){res.end();return;}
+        if(response.headers.get('content-type')?.includes('text/event-stream'))res.flushHeaders();
+        await new Promise<void>((resolve,reject)=>{const body=Readable.fromWeb(response.body as any);body.once('error',reject);res.once('finish',resolve);res.once('close',()=>{body.destroy();resolve();});body.pipe(res);});
+      }catch{if(res.headersSent){res.destroy();return;}const response=json({error:{code:'local_network',message:'本地网络请求失败，请检查系统代理设置',retryable:true}},502);if(!res.writableEnded){res.statusCode=response.status;response.headers.forEach((v,k)=>res.setHeader(k,v));res.end(await response.text());}}
     });
     server.httpServer?.once('close',()=>{codex.close();void agent?.close();});
   }};
