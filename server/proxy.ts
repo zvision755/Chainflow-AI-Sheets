@@ -1,7 +1,11 @@
 import { z } from 'zod';
 import { target } from './targets';
+import { StreamFailure } from '../core/stream-protocol';
+import { generationStream } from './generation-stream';
+import { readProviderStream } from './provider-stream';
+import { providerResponse } from './provider-response';
 const connection=z.object({provider:z.enum(['openai','deepseek','custom']).default('openai'),customUrl:z.string().max(500).default('')});
-const payload=connection.extend({model:z.string().regex(/^[a-zA-Z0-9._:/-]{1,100}$/),prompt:z.string().min(1).max(12000),input:z.string().min(1).max(32000),maxTokens:z.number().int().min(64).max(4096),reasoning:z.enum(['none','low','medium','high'])}).strict();
+const payload=connection.extend({model:z.string().regex(/^[a-zA-Z0-9._:/-]{1,100}$/),prompt:z.string().min(1).max(12000),input:z.string().min(1).max(32000),maxTokens:z.number().int().min(64).max(4096),reasoning:z.enum(['none','low','medium','high']),stream:z.boolean().default(false)}).strict();
 const buckets=new Map<string,{active:number;count:number;expires:number}>();
 let totalActive=0;
 const headers={'Cache-Control':'no-store, max-age=0','Pragma':'no-cache','Content-Type':'application/json','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'};
@@ -28,16 +32,22 @@ export async function proxy(request:Request,operation:'generate'|'models',fetche
   const controller=new AbortController();let timeout=false;const timer=setTimeout(()=>{timeout=true;controller.abort();},110000);
   const cancel=()=>controller.abort();request.signal.addEventListener('abort',cancel,{once:true});if(request.signal.aborted)cancel();
   const redact=(s:string)=>s.replaceAll(key,'[已隐藏密钥]');
+  let handedOff=false,released=false;const cleanup=()=>{if(released)return;released=true;clearTimeout(timer);request.signal.removeEventListener('abort',cancel);bucket.active--;totalActive--;};
   try{
     const params=operation==='generate'?data as z.infer<typeof payload>:null;
-    const response=await fetcher(operation==='generate'?destination.generate:destination.models,{method:params?'POST':'GET',headers:{Authorization:`Bearer ${key}`,...(params?{'Content-Type':'application/json'}:{})},...(params?{body:JSON.stringify(destination.protocol==='responses'?{model:params.model,instructions:params.prompt,input:params.input,max_output_tokens:params.maxTokens,reasoning:{effort:params.reasoning},store:false}:{model:params.model,messages:[{role:'system',content:params.prompt},{role:'user',content:params.input}],max_tokens:params.maxTokens,stream:false,...(data.provider==='deepseek'?{thinking:{type:params.reasoning==='none'?'disabled':'enabled'},reasoning_effort:params.reasoning}:params.reasoning!=='none'?{reasoning_effort:params.reasoning}:{})})}:{}),signal:controller.signal,redirect:'error',cache:'no-store'});
-    let result:any;try{result=JSON.parse(await limitedText(response.body,1500000));}catch{return fail('invalid_response','提供商返回内容过大或格式异常',502);}
+    let response=await fetcher(operation==='generate'?destination.generate:destination.models,{method:params?'POST':'GET',headers:{Authorization:`Bearer ${key}`,...(params?{'Content-Type':'application/json',Accept:params.stream?'text/event-stream':'application/json'}:{})},...(params?{body:JSON.stringify(destination.protocol==='responses'?{model:params.model,instructions:params.prompt,input:params.input,max_output_tokens:params.maxTokens,reasoning:{effort:params.reasoning},store:false,stream:params.stream}:{model:params.model,messages:[{role:'system',content:params.prompt},{role:'user',content:params.input}],max_tokens:params.maxTokens,stream:params.stream,...(params.stream?{stream_options:{include_usage:true}}:{}),...(data.provider==='deepseek'?{thinking:{type:params.reasoning==='none'?'disabled':'enabled'},reasoning_effort:params.reasoning}:params.reasoning!=='none'?{reasoning_effort:params.reasoning}:{})})}:{}),signal:controller.signal,redirect:'error',cache:'no-store'});
+    let isStream=false;if(params?.stream&&response.ok){const prepared=await providerResponse(response,controller.signal);response=prepared.response;isStream=prepared.stream;}
+    if(isStream){
+      handedOff=true;
+      return generationStream(onText=>readProviderStream(response,destination.protocol,controller.signal,key,onText),()=>controller.abort(),error=>({type:'error',error:timeout?{code:'timeout',message:'提供商请求超过 110 秒，已终止',retryable:true}:controller.signal.aborted?{code:'cancelled',message:'请求已取消',retryable:false}:error instanceof StreamFailure?{code:error.code,message:redact(error.message),retryable:error.retryable}:{code:'stream_interrupted',message:'提供商流式连接中断，请重试或关闭流式输出',retryable:true}}),cleanup);
+    }
+    let result:any;try{result=JSON.parse(await limitedText(response.body,1500000));}catch(error){if(controller.signal.aborted)throw error;if(response.ok)return fail('invalid_response','提供商返回内容过大或格式异常',502);}
     if(!response.ok){const code=String(result?.error?.code??'');
       if(response.status===401)return fail('invalid_key',`${destination.name} 接口不接受此密钥，请确认密钥与接口提供商对应、没有多余空格且未撤销`,401);
       if(code==='insufficient_quota'||code==='billing_hard_limit_reached'||response.status===402)return fail('insufficient_quota','API 账户余额不足或用量额度已耗尽，请检查提供商账户',402);
       if(response.status===429)return fail('rate_limit','提供商限流，请降低并发并稍后重试',429,true);
       if(response.status===403||response.status===404)return fail('model_access','该模型不可用、无权限或地区受限；请加载账户模型并重新选择',response.status);
-      if(response.status===400)return fail('provider_parameters','提供商不接受此模型或生成参数，请尝试调整模型、推理强度或输出上限',400);
+      if(response.status===400)return fail('provider_parameters',params?.stream?'提供商不接受此模型或流式参数，请尝试关闭流式输出或调整模型参数':'提供商不接受此模型或生成参数，请尝试调整模型、推理强度或输出上限',400);
       return fail('provider_error','提供商暂时无法处理请求，请稍后重试',502,true);
     }
     if(!params){if(!Array.isArray(result.data))return fail('invalid_response','模型列表格式异常',502);return json({models:result.data.map((m:any)=>m.id).filter((s:any)=>typeof s==='string'&&s!==key&&/^[a-zA-Z0-9._:/-]{1,100}$/.test(s)).slice(0,1000)});}
@@ -48,5 +58,5 @@ export async function proxy(request:Request,operation:'generate'|'models',fetche
     if(text.length>32000)return fail('output_size','输出超过本站的 32000 字符限制，请降低输出上限',422);
     return json({text:redact(text),usage:{input:Number.isFinite(result.usage?.input_tokens??result.usage?.prompt_tokens)?result.usage.input_tokens??result.usage.prompt_tokens:0,output:Number.isFinite(result.usage?.output_tokens??result.usage?.completion_tokens)?result.usage.output_tokens??result.usage.completion_tokens:0}});
   }catch(error){const code=String((error as {cause?:{code?:unknown};code?:unknown})?.cause?.code??(error as {code?:unknown})?.code??'');const reasons:Record<string,string>={ECONNRESET:'连接被中断',ETIMEDOUT:'连接超时',ENOTFOUND:'DNS 解析失败',ECONNREFUSED:'连接被拒绝',UND_ERR_CONNECT_TIMEOUT:'连接超时',UND_ERR_SOCKET:'连接被中断'};return fail(timeout?'timeout':controller.signal.aborted?'cancelled':'network',timeout?'提供商请求超过 110 秒，已终止':controller.signal.aborted?'请求已取消':reasons[code]?`无法连接提供商：${reasons[code]}，请稍后重试`:'无法连接提供商，请检查网络或稍后重试',timeout?504:controller.signal.aborted?499:502,timeout||!controller.signal.aborted);}
-  finally{clearTimeout(timer);request.signal.removeEventListener('abort',cancel);bucket.active--;totalActive--;}
+  finally{if(!handedOff)cleanup();}
 }

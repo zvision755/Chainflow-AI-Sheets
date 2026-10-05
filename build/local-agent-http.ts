@@ -3,7 +3,8 @@ import { z } from 'zod';
 import type { CodexBridge } from './codex-bridge';
 import { LocalAgentError } from './codex-protocol';
 import { json } from '../server/proxy';
-const payload=z.object({model:z.string().regex(/^[a-zA-Z0-9._:/-]{1,100}$/),prompt:z.string().min(1).max(12000),input:z.string().min(1).max(32000),maxTokens:z.number().int().min(64).max(4096),reasoning:z.enum(['none','low','medium','high'])}).strict();
+import { generationStream } from '../server/generation-stream';
+const payload=z.object({model:z.string().regex(/^[a-zA-Z0-9._:/-]{1,100}$/),prompt:z.string().min(1).max(12000),input:z.string().min(1).max(32000),maxTokens:z.number().int().min(64).max(4096),reasoning:z.enum(['none','low','medium','high']),stream:z.boolean().default(false)}).strict();
 export function localRequestAllowed(host:string,address:string|undefined){
   try{return ['127.0.0.1','localhost','[::1]'].includes(new URL(`http://${host}`).hostname)&&['127.0.0.1','::1','::ffff:127.0.0.1'].includes(address??'');}catch{return false;}
 }
@@ -20,6 +21,10 @@ export async function localAgentRequest(request:Request,operation:'status'|'gene
   }catch{return fail('invalid_request','请求格式不正确',400);}
   const parsed=operation==='generate'?payload.safeParse(raw):z.object({}).strict().safeParse(raw);
   if(!parsed.success)return fail('parameters','Agent 参数不合法，请检查模型、输入长度与输出预算',400);
+  if(operation==='generate'&&(parsed.data as z.infer<typeof payload>).stream){
+    const abort=new AbortController(),cancel=()=>abort.abort();request.signal.addEventListener('abort',cancel,{once:true});if(request.signal.aborted)cancel();
+    return generationStream(onText=>bridge.generate(parsed.data as z.infer<typeof payload>,abort.signal,onText),cancel,error=>({type:'error',error:error instanceof LocalAgentError?{code:error.code,message:error.message,retryable:error.retryable}:{code:'codex_connection',message:'无法连接本地 Codex，请检查桌面应用登录状态',retryable:true}}),()=>request.signal.removeEventListener('abort',cancel));
+  }
   try{return json(operation==='status'?await bridge.status():await bridge.generate(parsed.data as z.infer<typeof payload>,request.signal));}
   catch(error){if(error instanceof LocalAgentError)return fail(error.code,error.message,error.status,error.retryable);return fail('codex_connection','无法连接本地 Codex，请检查桌面应用登录状态',503,true);}
 }

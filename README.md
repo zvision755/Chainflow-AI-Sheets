@@ -53,6 +53,7 @@ CHAINFLOW_DEV_PROXY=http://127.0.0.1:7897 npm run dev -- --host 127.0.0.1 --port
 - 行新增、删除、复制；输出可以手动编辑。
 - 单元格重跑，单行、整列、全表运行；停止与失败重试。
 - 生成状态：待运行、排队、生成中、完成、失败、已取消、需要更新。
+- 默认开启流式输出，API 和本地 Codex Agent 均可逐步显示正文；开关保存在浏览器运行设置中。
 - 本地浏览器保存、JSON 导入导出、CSV 导出（防止常见表格公式注入）。
 - 中文桌面宽表格及窄屏横向表格滚动；执行记录含每次实际调用的耗时和 tokens。
 - 拖动列标题右边界独立调整列宽（180–1200 像素）；双击恢复默认，聚焦边界后方向键微调。列宽随浏览器表格和 JSON 保存，排序后跟随对应列，调整宽度不重新生成结果。默认 A/B 更窄，C 更宽，适合词汇、例句和长篇解释。
@@ -67,6 +68,14 @@ API 模式按依赖图调度，一个单元格默认一次模型请求（OpenAI 
 Agent 模式先按依赖规划；生成后进行配置的本地检查（最少字符数、包含来源原文），不增加模型调用。只有开启列的「额外语义检查」才调用模型判断是否符合提示词。未通过时，在修正次数、最大实际调用步数与整次时限内修正；暂时性网络/限流错误由共用调度器进行排队重试，受自动重试次数、最大调用步数及总时限限制。无效密钥、无权限或余额不足不自动重试。默认最多 50 次调用、1 次修正、10 分钟；单元格也有超时。公开 API/Agent 共用访客凭证转发层；本地 Codex Agent 使用独立订阅适配器。
 
 本地规则无法全面判断任意自然语言要求。需要语义判断时明确启用检查，会额外收费。最大步数包含生成、修正和语义检查。执行记录仅在内存保留最近 300 步，刷新清空。
+
+### 流式输出
+
+首页「流式输出」默认勾选，旧设置自动迁移为开启；取消勾选后等待完整结果再显示。开关同时适用于 API、公开 Agent 和本地 Codex Agent，保存在浏览器独立运行设置中。API 使用 `stream:true`：Responses 读取正文 delta 和完成事件，Chat Completions 读取正文 delta、完成标记及用量；本地 Codex 读取最终回答的增量通知，不显示分析/旁白或语义检查 JSON。本地 HTTP 入口直接转发流，避免先缓冲整段响应。
+
+生成中的文字是临时预览；正式结果、JSON/CSV 导出和浏览器表格保存只使用最后一次成功接受的结果。只有收到完整结束标记且通过该模式检查后才更新结果、触发下游依赖等待。停止、编辑上游、超时或流中断会丢弃临时预览，保留原正式结果；连接中断按现有设置有限重试，迟到的增量和旧请求不能覆盖新结果。每次模型请求只有一次网络调用，开启流式不额外调用模型，也不增加任何系统/用户提示词。
+
+提供商响应头缺少 SSE 标记时，服务端只检查有限前缀并继续转发原始流，不收集完整响应。如果提供商忽略流式参数并返回完整 JSON，同一次请求直接使用完整结果；若明确拒绝流式参数，会提示关闭开关，不自动追加一笔非流式请求。字符、响应大小、并发和 110 秒服务端时限同样约束整个流，直到完成或取消才释放并发名额；响应禁止缓存。流式不能缩短模型首字输出前的排队/思考时间，也不能让仅返回完整结果的提供商提前出字。
 
 ### Codex 本地订阅适配器
 
@@ -154,6 +163,7 @@ API 与 Agent 首次生成共用同一组展开消息。Agent 只有在已启用
 - `server/targets.ts`：受审阅的域名、HTTPS/路径验证与协议选择。
 - `modes/api.ts` / `modes/agent.ts`：两种清楚分离的执行策略。
 - `server/proxy.ts`：请求/凭证验证、安全官方请求、并发、超时和错误映射。
+- `core/stream-protocol.ts`、`server/provider-stream.ts`、`server/provider-response.ts`、`server/generation-stream.ts`、`model/stream.ts`：有大小限制的 SSE 解析、提供商事件适配、流转发及客户端读取。
 - `app/api/*/route.ts`：Sites 服务端入口。
 - `build/local-api-plugin.ts`：仅开发用的 Mac 系统代理适配，不进入生产 Worker。
 - `build/sites-worker.ts` 与 `sites()` 插件：官方 Sites starter 的 Worker 构建入口。
@@ -182,7 +192,7 @@ npm test
 npm run build
 ```
 
-78 项核心/服务端/凭证/示例/本地 Agent/TTS/提示词模板/重复结果测试通过。TTS 测试覆盖目标限制、同源与参数验证、二进制音频、并发与超时、取消和旧响应隔离、播放失败、Blob URL 释放，以及公开版关闭本地入口。当前本机页面验收使用 Codex 自带浏览器，已验证真实 Kokoro 日语/英语播放、停止、失败提示和桌面/手机布局，原表格提示词与结果保留。此前的 4 项 Playwright 自动化界面测试已通过；保留 `npm run test:ui` 仅作为未来 CI 的可选入口，本机不自动运行。CI 如需运行，可修改配置并使用项目内浏览器：
+96 项核心/服务端/凭证/示例/本地 Agent/TTS/提示词模板/重复结果/流式测试通过。TTS 测试覆盖目标限制、同源与参数验证、二进制音频、并发与超时、取消和旧响应隔离、播放失败、Blob URL 释放，以及公开版关闭本地入口。当前本机页面验收使用 Codex 自带浏览器，已验证真实 Kokoro 日语/英语播放、停止、失败提示和桌面/手机布局，原表格提示词与结果保留。此前的 4 项 Playwright 自动化界面测试已通过；保留 `npm run test:ui` 仅作为未来 CI 的可选入口，本机不自动运行。CI 如需运行，可修改配置并使用项目内浏览器：
 
 ```sh
 PLAYWRIGHT_BROWSERS_PATH=.cache/ms-playwright ./node_modules/.bin/playwright install chromium
@@ -194,12 +204,15 @@ PLAYWRIGHT_BROWSERS_PATH=.cache/ms-playwright ./node_modules/.bin/playwright ins
 
 2026-10-06 后续精简修复移除了全部系统消息自动追加规则，验证当前 B 列系统预览与输入严格一致、用户消息只有用户保留的来源/时间模板，保存的提示词和表格结果未改动。自动测试覆盖重复检查开关不改变消息、重试不增加隐藏内容、最近历史条数/字符上限，以及 Agent 修正保持系统消息一致。
 
+2026-10-06 流式验收使用 Codex 自带浏览器：通过页面已有凭证重跑第 1 行 B 列，API 收到多段 SSE 正文并完成；本地 ChatGPT 订阅 Agent 同样收到多段正文并完成。两次成功运行均计数归零，未触发 C 列，原有列提示词和其他单元格结果保留。开关关闭/打开均实际写入运行设置，最终保持开启；390px 窄屏没有页面横向溢出。自动测试另覆盖跨块 Unicode、完整结束标记、连接中断、有限重试、取消及迟到回调、临时结果不保存/导出、上游完整接受后才运行下游、流中跨块密钥脱敏、流结束/取消才释放并发，以及 Codex 旁白过滤。OpenAI/DeepSeek 官方调用路径通过模拟 SSE 验证，未使用个人 OpenAI key。
+
 ## 当前官方文档
 
 2026-10-04 核实：
 
 - [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)
 - [文本生成与 Responses API](https://developers.openai.com/api/docs/guides/text)
+- [OpenAI 流式输出](https://developers.openai.com/api/docs/guides/streaming-responses)（2026-10-06 核实）
 - [DeepSeek Chat Completions、参数与当前模型](https://api-docs.deepseek.com/api/create-chat-completion/)
 - [账户模型列表](https://developers.openai.com/api/reference/resources/models/methods/list)
 - [Codex app-server](https://learn.chatgpt.com/docs/app-server)

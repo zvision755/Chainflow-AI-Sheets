@@ -8,6 +8,7 @@ import { GET as productionCapabilities } from '../app/api/capabilities/route';
 import { Scheduler } from '../core/scheduler';
 import { example, type GenerateInput } from '../core/types';
 import { defaultRunOptions } from '../core/run-settings';
+import { readGeneration } from '../model/stream';
 const payload:GenerateInput={model:'gpt-6-luna',prompt:'生成结果',input:'フレーム',maxTokens:1024,reasoning:'none'};
 class FakeCodex implements CodexTransport {
   calls:{method:string;params:any}[]=[];listeners=new Set<(m:RpcMessage)=>void>();threads=0;auth='chatgpt';hold=false;
@@ -88,4 +89,35 @@ test('Agent scheduler snapshots backend and selected model for both dependent ce
 });
 test('changing the Agent model invalidates generated results while preserving inputs and old output',async()=>{
   let calls=0;const engine=new Scheduler(example(),async p=>{calls++;return {text:p.input+'结果',usage:{input:1,output:2}};});engine.run(engine.targets('all'),{...defaultRunOptions,mode:'agent',dependencyDelayMs:0,autoRetry:false});for(let i=0;i<100&&engine.busy;i++)await new Promise(r=>setTimeout(r,2));const old=engine.sheet.rows[0].cells.teacher.value;engine.invalidateGeneratedResults();assert.equal(engine.sheet.rows[0].cells.input.status,'done');assert.equal(engine.sheet.rows[0].cells.teacher.value,old);assert.equal(engine.sheet.rows[0].cells.teacher.status,'stale');assert.equal(engine.estimate(engine.targets('all')),2);assert.equal(calls,2);
+});
+test('Codex streams final-answer deltas before turn completion and never displays commentary',async()=>{
+  const {fake,bridge}=setup();fake.hold=true;const seen:string[]=[];
+  const run=bridge.generate(payload,new AbortController().signal,t=>seen.push(t));await waitFor(fake,'turn/start');
+  fake.notify('item/started',{threadId:'t1',item:{type:'agentMessage',id:'comment',phase:'commentary'}});
+  fake.notify('item/agentMessage/delta',{threadId:'t1',itemId:'comment',delta:'分析内容'});
+  fake.notify('item/completed',{threadId:'t1',item:{type:'agentMessage',id:'comment',phase:'commentary',text:'分析内容'}});
+  assert.deepEqual(seen,[]);
+  fake.notify('item/started',{threadId:'t1',item:{type:'agentMessage',id:'answer',phase:'final_answer'}});
+  fake.notify('item/agentMessage/delta',{threadId:'t1',itemId:'answer',delta:'フレ'});
+  assert.deepEqual(seen,['フレ']);
+  fake.notify('item/agentMessage/delta',{threadId:'t1',itemId:'answer',delta:'ーム結果'});
+  fake.notify('item/completed',{threadId:'t1',item:{type:'agentMessage',id:'answer',phase:'final_answer',text:'フレーム結果'}});
+  fake.notify('thread/tokenUsage/updated',{threadId:'t1',tokenUsage:{total:{inputTokens:6,outputTokens:8}}});
+  fake.notify('turn/completed',{threadId:'t1',turn:{status:'completed'}});
+  assert.deepEqual(await run,{text:'フレーム結果',usage:{input:6,output:8}});bridge.close();
+});
+test('local Agent SSE route streams without a key and reader cancel interrupts its Codex turn',async()=>{
+  const {fake,bridge}=setup();fake.hold=true;const seen:string[]=[];
+  const response=await localAgentRequest(new Request('http://127.0.0.1:3002/api/local-agent/generate',{method:'POST',headers:{origin:'http://127.0.0.1:3002','content-type':'application/json'},body:JSON.stringify({...payload,stream:true})}),'generate',bridge);
+  assert.match(response.headers.get('content-type')!,/text\/event-stream/);assert.match(response.headers.get('cache-control')!,/no-store/);
+  const abort=new AbortController(),run=readGeneration(response,abort.signal,t=>seen.push(t));const failure=assert.rejects(run,(e:any)=>e.code==='cancelled');
+  await waitFor(fake,'turn/start');fake.notify('item/started',{threadId:'t1',item:{type:'agentMessage',id:'answer',phase:'final_answer'}});fake.notify('item/agentMessage/delta',{threadId:'t1',itemId:'answer',delta:'部分'});
+  for(let i=0;i<100&&!seen.length;i++)await new Promise(r=>setTimeout(r,2));assert.deepEqual(seen,['部分']);
+  abort.abort();await failure;await waitFor(fake,'turn/interrupt');assert.equal(fake.calls.filter(c=>c.method==='turn/interrupt').length,1);bridge.close();
+});
+test('local Agent streaming failures hide raw diagnostics and stream-off keeps the JSON route',async()=>{
+  let progress=0;const bridge={status:async()=>({} as any),generate:async(_p:GenerateInput,_s:AbortSignal,onText?:((t:string)=>void))=>{if(onText){onText('部分');throw Error('private auth diagnostic');}progress++;return {text:'完整',usage:{input:1,output:2}};}};
+  const request=(stream:boolean)=>new Request('http://127.0.0.1:3002/api/local-agent/generate',{method:'POST',headers:{origin:'http://127.0.0.1:3002','content-type':'application/json'},body:JSON.stringify({...payload,stream})});
+  const seen:string[]=[];await assert.rejects(readGeneration(await localAgentRequest(request(true),'generate',bridge),new AbortController().signal,t=>seen.push(t)),(e:any)=>e.code==='codex_connection'&&!e.message.includes('private'));assert.deepEqual(seen,['部分']);
+  const complete=await localAgentRequest(request(false),'generate',bridge);assert.match(complete.headers.get('content-type')!,/application\/json/);assert.equal((await complete.json() as any).text,'完整');assert.equal(progress,1);
 });

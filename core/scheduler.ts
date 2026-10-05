@@ -37,13 +37,13 @@ export class Scheduler {
   private cleanupBatch(batch:Batch){if(![...this.queue.values(),...[...this.active.values()].map(a=>a.task)].some(t=>t.batch===batch)&&batch.timer){clearTimeout(batch.timer);batch.timer=null;}}
   private stopBatch(batch:Batch,message:string){
     for(const [key,t] of this.queue)if(t.batch===batch){const c=this.cell(t.row,t.column);if(c){c.status='cancelled';c.error=message;}this.queue.delete(key);}
-    for(const {task,controller} of this.active.values())if(task.batch===batch){const c=this.cell(task.row,task.column);if(c){c.revision++;c.status='cancelled';c.error=message;}controller.abort();}
+    for(const {task,controller} of this.active.values())if(task.batch===batch){const c=this.cell(task.row,task.column);if(c){c.revision++;delete c.preview;c.status='cancelled';c.error=message;}controller.abort();}
     this.cleanupBatch(batch);this.emit();this.pump();
   }
   stop(){for(const batch of new Set([...this.queue.values(),...[...this.active.values()].map(a=>a.task)].map(t=>t.batch)))this.stopBatch(batch,'已停止；已提交给提供商的请求仍可能计费');}
   private invalidate(row:string,columns:Set<string>){
     const batches=new Set<Batch>();
-    for(const col of columns){const key=this.key(row,col),c=this.cell(row,col);if(!c)continue;this.resultHistory?.delete(key);c.revision++;c.status='stale';delete c.error;delete c.completedAt;
+    for(const col of columns){const key=this.key(row,col),c=this.cell(row,col);if(!c)continue;this.resultHistory?.delete(key);c.revision++;c.status='stale';delete c.preview;delete c.error;delete c.completedAt;
       const t=this.queue.get(key);if(t){batches.add(t.batch);this.queue.delete(key);}this.active.get(key)?.controller.abort();}
     batches.forEach(b=>this.cleanupBatch(b));
   }
@@ -95,9 +95,17 @@ export class Scheduler {
       const step:Step={model:task.options.mode==='agent'&&task.options.agentBackend==='codex'?task.options.agentModel??'gpt-6-luna':col.model,backend:task.options.mode==='agent'?task.options.agentBackend??'api':'api',id:id(),row:task.row,column:col.name,phase,state:'running',started:Date.now()};this.steps=[...this.steps.slice(-299),step];this.emit();
       try{const result=await fn();step.state=controller.signal.aborted?'cancelled':'done';step.usage=result.usage;return result;}catch(error){step.state=controller.signal.aborted?'cancelled':'error';step.error=controller.signal.aborted?'已取消':error instanceof Error?error.message:'调用失败';throw error;}finally{step.elapsed=Date.now()-step.started;this.emit();}
     };
-    const guarded:Generate=async(payload,signal)=>{
+    let progressTimer:ReturnType<typeof setTimeout>|undefined,lastProgress=0;
+    const guarded:Generate=async(payload,signal,display)=>{
+      const initial=this.cell(task.row,task.column);if(initial&&initial.revision===task.revision&&display?.display!==false){delete initial.preview;this.emit();}
+      const onText=task.options.streaming!==false&&display?.display!==false?(text:string)=>{
+        const cell=this.cell(task.row,task.column);if(!cell||cell.revision!==task.revision||signal.aborted||cell.status!=='running')return;
+        cell.preview=text;
+        if(Date.now()-lastProgress>=50){lastProgress=Date.now();this.emit();}
+        else if(!progressTimer)progressTimer=setTimeout(()=>{progressTimer=undefined;if(!signal.aborted&&cell.revision===task.revision){lastProgress=Date.now();this.emit();}},50);
+      }:undefined;
       return new Promise((resolve,reject)=>{const abort=()=>reject(new Error('请求已取消'));signal.addEventListener('abort',abort,{once:true});if(signal.aborted){abort();return;}
-        Promise.resolve().then(()=>this.generate(task.options.mode==='agent'&&task.options.agentBackend==='codex'?{...payload,model:task.options.agentModel??'gpt-6-luna'}:payload,signal,{mode:task.options.mode,agentBackend:task.options.agentBackend})).then(resolve,reject).finally(()=>signal.removeEventListener('abort',abort));});
+        Promise.resolve().then(()=>this.generate(task.options.mode==='agent'&&task.options.agentBackend==='codex'?{...payload,model:task.options.agentModel??'gpt-6-luna'}:payload,signal,{mode:task.options.mode,agentBackend:task.options.agentBackend,stream:task.options.streaming!==false,onText})).then(resolve,reject).finally(()=>signal.removeEventListener('abort',abort));});
     };
     try{
       if(!input.trim())throw new Error('来源内容为空，请先填写输入');if(!col.prompt.trim())throw new Error('请先配置列提示词');
@@ -126,6 +134,6 @@ export class Scheduler {
         cell.elapsed=Date.now()-started;
       }
     }
-    finally{clearTimeout(timeout);this.active.delete(key);this.cleanupBatch(task.batch);this.emit();this.pump();}
+    finally{clearTimeout(timeout);clearTimeout(progressTimer);const cell=this.cell(task.row,task.column);if(cell&&cell.revision===task.revision)delete cell.preview;this.active.delete(key);this.cleanupBatch(task.batch);this.emit();this.pump();}
   }
 }
