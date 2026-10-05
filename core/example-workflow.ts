@@ -19,6 +19,7 @@ const saved={
     },
     {
       "id": "explain",
+      "freshResults": true,
       "ttsLanguage": "ja",
       "name": "日语例句",
       "sources": [
