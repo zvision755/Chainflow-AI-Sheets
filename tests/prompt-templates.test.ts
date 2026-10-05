@@ -19,7 +19,7 @@ test('templates use exact current sources, prior result, bounded history, UTC se
   const s=example(),col=s.columns[2];col.sources=['input','explain'];s.rows[0].cells.explain=emptyCell('来源例句','done');s.rows[0].cells.teacher=emptyCell('原解读','done');
   const context=promptContext(s,'row-1',col,['先前结果'],new Date('2026-10-06T01:02:03.456Z'),'test-id');
   assert.equal(context.text,'[日语单词]\nフレーム\n\n[日语释义]\n来源例句');assert.equal(context.existing_result,'原解读');assert.deepEqual(JSON.parse(context.recent_results),['先前结果','原解读']);assert.equal(context.timestamp,'2026-10-06T01:02:03Z');assert.equal(context.request_id,'test-id');assert.equal(context.row_number,'1');assert.equal(context.column_name,col.name);
-  assert.ok(promptContext(s,'row-1',col,Array.from({length:5},()=> '"'.repeat(32000))).recent_results.length<10100);
+  assert.ok(promptContext(s,'row-1',col,Array.from({length:5},(_,i)=> '"'.repeat(32000)+i)).recent_results.length<=10000);
 });
 test('template replacement is single-pass literal text, catches unknown names and expanded size',()=>{
   const s=example(),col=s.columns[1];s.rows[0].cells.input.value='{{timestamp}} $& <script>数据</script>';
@@ -50,4 +50,16 @@ test('invalid or empty user templates cannot overwrite a valid saved column',()=
   assert.throws(()=>e.configure({...original,userPrompt:' '}),/不能为空/);
   assert.throws(()=>e.configure({...original,userPrompt:'{{not_supported}}'}),/未知模板/);
   assert.deepEqual(s.columns[1],original);
+});
+test('history remains at five results and is only sent through explicit templates',()=>{
+  const s=example(),col=s.columns[1];col.freshResults=true;col.userPrompt='来源：{{text}}\n本次时间：{{timestamp}}';s.rows[0].cells.explain.value='当前结果';
+  const history=Array.from({length:100},(_,i)=>`旧结果-${i}`),ctx=promptContext(s,'row-1',col,history,new Date('2026-10-06T01:02:03Z'),'id');
+  assert.deepEqual(JSON.parse(ctx.recent_results),['旧结果-96','旧结果-97','旧结果-98','旧结果-99','当前结果']);
+  const lean=buildPrompts(col,ctx);assert.equal(lean.prompt,col.prompt);assert.equal(lean.input,'来源：フレーム\n本次时间：2026-10-06T01:02:03Z');
+  col.userPrompt='{{text}}\n{{existing_result}}\n{{recent_results}}';const explicit=buildPrompts(col,ctx);assert.equal(explicit.prompt,col.prompt);assert.ok(explicit.input.includes('旧结果-99'));assert.ok(!explicit.prompt.includes('旧结果'));
+});
+test('Agent correction keeps system instructions exact and places correction feedback in its user message',async()=>{
+  const s=example(),sent:GenerateInput[]=[],e=new Scheduler(s,async p=>{sent.push(p);return {text:sent.length===1?'没有来源词':'フレームの例句',usage:{input:1,output:2}};});
+  e.run(e.targets('cell','row-1','explain'),{...options,mode:'agent',autoRetry:true,maxRetries:1},true);await finish(e);
+  assert.equal(sent.length,2);assert.ok(sent.every(p=>p.prompt===s.columns[1].prompt));assert.equal(sent[0].input,'フレーム');assert.match(sent[1].input,/请修正上次结果的问题/);assert.equal(s.rows[0].cells.explain.status,'done');
 });
