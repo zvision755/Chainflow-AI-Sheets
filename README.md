@@ -4,6 +4,8 @@
 
 ## 启动
 
+长期在 OrbStack / Windows Docker Desktop 运行，可在项目根目录执行 `docker compose up -d --build`，访问 `http://127.0.0.1:3003`。详见 [Docker 启动、登录、TTS 与迁移说明](docker/README.md)。Docker 使用独立 Node 正式构建，原有 Mac 3002 开发服务和 Sites 构建继续保留。
+
 需要 Node.js 22.13 或更高版本。本次使用 Node 26.10.0。所有项目依赖都在项目内 `node_modules`，版本由 `package-lock.json` 锁定，不依赖全局项目包。项目没有使用 Python；如果以后添加 Python，请建立并使用本项目 `.venv`。
 
 ```sh
@@ -192,7 +194,7 @@ npm test
 npm run build
 ```
 
-96 项核心/服务端/凭证/示例/本地 Agent/TTS/提示词模板/重复结果/流式测试通过。TTS 测试覆盖目标限制、同源与参数验证、二进制音频、并发与超时、取消和旧响应隔离、播放失败、Blob URL 释放，以及公开版关闭本地入口。当前本机页面验收使用 Codex 自带浏览器，已验证真实 Kokoro 日语/英语播放、停止、失败提示和桌面/手机布局，原表格提示词与结果保留。此前的 4 项 Playwright 自动化界面测试已通过；保留 `npm run test:ui` 仅作为未来 CI 的可选入口，本机不自动运行。CI 如需运行，可修改配置并使用项目内浏览器：
+101 项核心/服务端/凭证/示例/本地 Agent/TTS/提示词模板/重复结果/流式/Docker HTTP 测试通过。TTS 测试覆盖目标限制、同源与参数验证、二进制音频、并发与超时、取消和旧响应隔离、播放失败、Blob URL 释放，以及公开版关闭本地入口。当前本机页面验收使用 Codex 自带浏览器，已验证真实 Kokoro 日语/英语播放、停止、失败提示和桌面/手机布局，原表格提示词与结果保留。此前的 4 项 Playwright 自动化界面测试已通过；保留 `npm run test:ui` 仅作为未来 CI 的可选入口，本机不自动运行。CI 如需运行，可修改配置并使用项目内浏览器：
 
 ```sh
 PLAYWRIGHT_BROWSERS_PATH=.cache/ms-playwright ./node_modules/.bin/playwright install chromium
