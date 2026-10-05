@@ -6,6 +6,7 @@ const saved={
   "columns": [
     {
       "id": "input",
+      "ttsLanguage": "ja",
       "name": "日语单词",
       "sources": [],
       "prompt": "",
@@ -18,6 +19,7 @@ const saved={
     },
     {
       "id": "explain",
+      "ttsLanguage": "ja",
       "name": "日语例句",
       "sources": [
         "input"
