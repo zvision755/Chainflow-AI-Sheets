@@ -7,16 +7,26 @@ import { createLocalTtsHandler } from '../build/local-tts-http';
 import type {KokoroState} from '../macos/kokoro';
 type TtsRuntime={status():KokoroState;load(remember:boolean):Promise<KokoroState>;unload():Promise<KokoroState>};
 
+function isPrivateIPv4(hostname:string){
+  const parts=hostname.split('.');
+  if(parts.length!==4||parts.some(part=>!/^\d{1,3}$/.test(part)||Number(part)>255))return false;
+  const [a,b]=parts.map(Number);
+  return a===10||(a===172&&b>=16&&b<=31)||(a===192&&b===168);
+}
+function allowedHostname(hostname:string,allowLan:boolean){
+  return ['127.0.0.1','localhost','[::1]'].includes(hostname)||(allowLan&&isPrivateIPv4(hostname));
+}
+
 export function hostTtsFetch(fetcher:typeof fetch=fetch):typeof fetch {
   return (input,init)=>{const url=new URL(String(input));if(!['127.0.0.1','localhost','[::1]'].includes(url.hostname))throw Error('Unexpected TTS destination');url.hostname='host.docker.internal';return fetcher(url,init);};
 }
-export function createDockerHandler(options:{bridge?:Pick<CodexBridge,'status'|'generate'>;fetcher?:typeof fetch;ttsFetcher?:typeof fetch;builtinTtsFetcher?:typeof fetch;runtime?:'docker'|'macos';builtinTtsUrl?:string;builtinTts?:boolean;ttsRuntime?:TtsRuntime;login?:()=>Promise<{authUrl:string}>;logout?:()=>Promise<void>}={}) {
+export function createDockerHandler(options:{bridge?:Pick<CodexBridge,'status'|'generate'>;fetcher?:typeof fetch;ttsFetcher?:typeof fetch;builtinTtsFetcher?:typeof fetch;runtime?:'docker'|'macos';builtinTtsUrl?:string;builtinTts?:boolean;ttsRuntime?:TtsRuntime;login?:()=>Promise<{authUrl:string}>;logout?:()=>Promise<void>;allowLan?:boolean}={}) {
   const runtime=options.runtime??'docker';
   const tts=createLocalTtsHandler((input,init)=>['127.0.0.1','localhost','[::1]'].includes(new URL(String(input)).hostname) ? (options.ttsFetcher??hostTtsFetch())(input,init) : (options.fetcher??fetch)(input,init),90000,{url:options.builtinTtsUrl??'http://kokoro:8880/v1',fetcher:options.builtinTtsFetcher??fetch});
   return async(request:Request):Promise<Response|null>=>{
     const url=new URL(request.url);
-    // Only localhost browser access. Port publishing is additionally loopback-only.
-    if(!['127.0.0.1','localhost','[::1]'].includes(url.hostname))return json({error:{code:'host',message:'Docker 版仅接受本机访问',retryable:false}},403);
+    // LAN requests are opt-in and accepted only for RFC1918 private IPv4 addresses.
+    if(!allowedHostname(url.hostname,options.allowLan===true))return json({error:{code:'host',message:'此主机地址未获准访问',retryable:false}},403);
     if(url.pathname==='/healthz')return request.method==='GET'?json({ok:true,runtime}):json({},405);
     if(url.pathname==='/api/capabilities')return request.method==='GET'?json({providers:['openai','deepseek','custom'],codex:!!options.bridge,tts:true,runtime,builtinTts:options.builtinTts!==false,ttsEngine:runtime==='macos'?'mlx':'cpu',ttsControl:!!options.ttsRuntime,codexLogin:!!options.login}):json({},405);
     if(!url.pathname.startsWith('/api/'))return null;
@@ -45,11 +55,12 @@ export function createDockerHandler(options:{bridge?:Pick<CodexBridge,'status'|'
   };
 }
 
-export async function serveDockerRequest(req:IncomingMessage,res:ServerResponse,handler:ReturnType<typeof createDockerHandler>,fallback:(req:IncomingMessage,res:ServerResponse)=>void) {
+export async function serveDockerRequest(req:IncomingMessage,res:ServerResponse,handler:ReturnType<typeof createDockerHandler>,fallback:(req:IncomingMessage,res:ServerResponse)=>void,allowLan=false) {
   const abort=new AbortController();req.once('aborted',()=>abort.abort());res.once('close',()=>{if(!res.writableEnded)abort.abort();});
   try{
     const host=req.headers.host??'';
-    if(!/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/.test(host)){res.writeHead(403,{'Cache-Control':'no-store'});res.end();return;}
+    let hostname='';try{hostname=new URL(`http://${host}`).hostname;}catch{}
+    if(!allowedHostname(hostname,allowLan)){res.writeHead(403,{'Cache-Control':'no-store'});res.end();return;}
     const path=new URL(req.url??'/',`http://${host}`).pathname;
     if(!path.startsWith('/api/')&&path!=='/healthz'){fallback(req,res);return;}
     const chunks:Buffer[]=[];let bytes=0;

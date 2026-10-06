@@ -14,9 +14,10 @@ services:
         condition: service_healthy
     networks: [default, speech]
     ports:
-      - "127.0.0.1:${CHAINFLOW_PORT:-3003}:8080"
+      - "${CHAINFLOW_BIND_ADDRESS:-127.0.0.1}:${CHAINFLOW_PORT:-3003}:8080"
     environment:
       CHAINFLOW_CODEX_ENABLED: "${CHAINFLOW_CODEX_ENABLED:-true}"
+      CHAINFLOW_LAN_ACCESS: "${CHAINFLOW_LAN_ACCESS:-false}"
       CHAINFLOW_HTTP_PROXY: "${CHAINFLOW_HTTP_PROXY:-}"
     volumes:
       - codex-login:/data/codex

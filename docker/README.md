@@ -23,7 +23,7 @@ docker compose down
 
 `down` 删除容器和网络，保留登录数据卷；不要使用 `down -v`，除非确实要删除容器 Codex 登录。更新源码后重新执行 `docker compose up -d --build`。重新构建镜像不删除浏览器表格或登录卷。
 
-如需换端口，在根目录 `.env` 写入 `CHAINFLOW_PORT=3005`，然后执行 `docker compose up -d`。端口仅发布到主机 `127.0.0.1`；HTTP 同时校验 loopback Host 和同源 Origin。此版本面向本机个人使用，不提供账号、多用户隔离或公网发布。不要仅把端口改成 `0.0.0.0` 来公开本机订阅。
+默认只允许本机访问。若要从可信局域网的其他设备访问，在根目录 `.env` 中设置 `CHAINFLOW_BIND_ADDRESS=0.0.0.0` 与 `CHAINFLOW_LAN_ACCESS=true`，然后执行 `docker compose up -d`。启用后仅接受 loopback 或 RFC1918 私有 IPv4 Host，并继续校验 API/Agent 请求的同源 Origin；OrbStack 的「Expose ports to LAN」需要开启。页面没有用户登录或多用户隔离，LAN 中可访问者能使用此容器已登录的 Codex Agent 额度；只在可信网络中启用，不用于访客 Wi-Fi 或公网。关闭时删去这两项或设回默认值，再执行 `docker compose up -d`。
 
 ## API 模式与表格迁移
 
