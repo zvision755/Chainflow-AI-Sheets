@@ -12,7 +12,7 @@ docker compose ps
 docker compose logs -f --tail=50
 ```
 
-也可用 `npm run docker:up` 启动。日常通过 OrbStack / Docker Desktop 找到 `chainflow-app-1`，点击启动、停止或重启。Docker Engine 启动后，`unless-stopped` 会自动恢复之前运行的服务；手动停止的容器保持停止。Windows 要在 Docker Desktop 设置里启用登录后启动 Docker Desktop。桌面软件退出且 Engine 停止时，网站不能访问。
+也可用 `npm run docker:up` 启动。日常通过 OrbStack / Docker Desktop 管理 `chainflow` 项目，把 `app` 和 `kokoro` 一起启动、停止或重启；无需再用 LaunchManager 管理 TTS。Docker Engine 启动后，`unless-stopped` 会自动恢复之前运行的服务；手动停止的容器保持停止。Windows 要在 Docker Desktop 设置里启用登录后启动 Docker Desktop。桌面软件退出且 Engine 停止时，网站不能访问。
 
 ```sh
 docker compose stop
@@ -55,11 +55,13 @@ docker compose restart
 
 API-only 使用者可以在 `.env` 设置 `CHAINFLOW_CODEX_ENABLED=false` 并重新启动；此时 Agent 使用页面自带 API key 的执行方式。此操作是明确的运行配置，不是自动回退。
 
-## Mac / Windows 上的 Kokoro
+## 内置 Kokoro 与第三方 TTS
 
-Kokoro 仍由主机启动，镜像不包含 TTS 模型。页面 TTS 地址保持 `http://127.0.0.1:8880/v1`（端口可修改）；容器会把已验证的回环目标转发到 `host.docker.internal`，不必填写经常变化的 Wi-Fi IP。OrbStack 和 Docker Desktop 均提供该主机域名。只有这条受限 TTS 请求使用主机网络地址，API 自定义 URL 的 HTTPS/域名限制不改变。
+Compose 自动构建并启动项目内的 Kokoro ONNX CPU 模型，与网站一起管理，不依赖 Mac/Windows 主机另开的服务或 LaunchManager。模型健康后启动前端；首页配置默认使用内置模型，原默认 8880 地址自动迁移。模型、41 个日语/英语/中文音色和词典都打入镜像，运行时不需要网络。首次构建需下载约 354 MB 模型/音色及 Python 依赖。Docker 不使用 Mac MLX/Metal；CPU 性能以实际合成测量为准。
 
-在 Docker 页面点击「配置 TTS → 测试连接」验证音色，再为列选择语言、点击朗读。Windows 如果无法连接，先确认主机 Kokoro 正在运行、端口正确、防火墙允许 Docker 的内部连接；必要时调整该服务的监听地址。Kokoro 不包含在本项目 Compose 内。音频仍只在内存中使用，禁止缓存，不写音频文件或登录卷。
+默认语速 0.5–2，一次最多 4096 字符、90 秒超时，一个合成线程。音频只在内存流转，不产生缓存音频文件。网站访问固定的 Compose 内部服务；Mac 3002 开发版通过仅回环 8881 端口复用同一模型。8881 不是原来的 8880，Wi-Fi 地址变化没有影响。
+
+「TTS 提供方 → 第三方 TTS API」保留 OpenAI 兼容 WAV 接口配置，地址、模型和每种语言的音色可自定义；第三方 TTS 密钥单独输入，仅在当前页面内存保存。详情见 [内置模型、协议、锁文件和校验说明](../tts/README.md)。
 
 ## 网络代理
 
@@ -69,11 +71,11 @@ OrbStack 默认跟随 Mac 系统代理。Windows 可在 Docker Desktop 配置代
 CHAINFLOW_HTTP_PROXY=http://host.docker.internal:7897
 ```
 
-Compose 将该设置用于构建阶段的 npm 下载，以及运行阶段的 API/Codex 外部请求；TTS 直连主机，代理设置不放入浏览器。只接受主机/回环 HTTP(S) 代理，不接受含账号密码、查询参数或任意远程地址的代理。代理地址里的 127.0.0.1 指容器本身，主机代理要使用 host.docker.internal。未设置时正常直连。构建使用 npm 下载缓存和有限重试，网络中断后可再次执行构建，不必重新下载已缓存的依赖。
+Compose 将该设置用于构建阶段的 npm、Python 和模型下载，以及运行阶段的 API/Codex 外部请求；内置 TTS 请求仅走容器内部网络，第三方远程 TTS 使用运行时代理；代理设置不放入浏览器。只接受主机/回环 HTTP(S) 代理，不接受含账号密码、查询参数或任意远程地址的代理。代理地址里的 127.0.0.1 指容器本身，主机代理要使用 host.docker.internal。未设置时正常直连。构建使用下载缓存和有限重试，网络中断后可再次执行构建，模型必须完整通过哈希校验才会使用。
 
 ## 安全与健康检查
 
-多阶段镜像仅包含正式前端/服务端、运行依赖和 Codex；构建上下文采用目录白名单，忽略 `.env`、auth.json、txt 密钥文件、node_modules、输出/浏览器备份和 Git/tool state。运行用户为 `node`，根文件系统只读，临时工作区在 `/tmp`，仅 Codex 专用卷可持久写入；不挂载 Docker socket 或主机目录。进程退出有停止时限，容器日志滚动限制为 3×10 MB，应用不记录请求正文、Authorization、密钥或 Codex 原始诊断。
+多阶段镜像仅包含正式前端/服务端、运行依赖和 Codex；构建上下文采用目录白名单，忽略 `.env`、auth.json、txt 密钥文件、node_modules、输出/浏览器备份和 Git/tool state。运行用户为 `node`，根文件系统只读，临时工作区在 `/tmp`，仅 Codex 专用卷可持久写入（TTS 模型只读）；不挂载 Docker socket 或主机目录。进程退出有停止时限，容器日志滚动限制为 3×10 MB，应用不记录请求正文、Authorization、密钥或 Codex 原始诊断。
 
 健康检查访问 `/healthz`，只检查服务响应，不请求模型或消耗额度。`healthy` 不代表已登录 Codex、模型有权限或 API key 正确。原有服务端限制继续生效：70 KB 请求、1.5 MB 模型响应、32,000 输出字符、每个凭证最多 3 并发和有限重试，流式直到结束/取消才释放并发。
 
@@ -87,10 +89,12 @@ docker compose up -d --build
 docker compose ps
 ```
 
-Docker 专项模拟测试覆盖真实 Node HTTP 的增量传输、取消、依赖链结果、计数归零、Host/Origin/大小/密钥检查、未登录不回退、TTS 主机地址转发。真实 OpenAI 调用仍由你在页面输入自己的 key 完成，容器订阅推理由你首次完成官方登录后验收。
+Docker 专项模拟测试覆盖真实 Node HTTP 的增量传输、取消、依赖链结果、计数归零、Host/Origin/大小/密钥检查、未登录不回退、内置 TTS 固定地址及第三方密钥转发。真实 OpenAI 调用仍由你在页面输入自己的 key 完成，容器订阅推理由你首次完成官方登录后验收。
 
 2026-10-06 已在 Mac OrbStack 实测 ARM64 正式镜像：容器健康、页面水合与桌面/390px 窄屏布局、从原 3002 页面导入当前提示词和全部单元格结果、容器重启和专用卷持久化、非 root/只读文件系统、无主机密钥/登录文件、Kokoro 41 个音色及实际日语合成均通过。OpenAI 官方地址通过本机代理可达，测试用无效密钥正确返回 401；未读取个人 API key 或执行真实付费生成。容器 Codex CLI 0.160.0 启动正常，未登录时页面明确要求容器登录；没有复用 Mac 登录态。101 项自动测试、类型检查、Docker 正式构建和原 Sites 构建通过。原 3002 服务继续运行。
 
-Linux AMD64 镜像也已在 OrbStack x86 仿真下完整构建并启动，首页、健康检查、API-only 配置和 AMD64 Codex CLI 0.160.0 均通过。临时验证容器随后删除，日常保留 ARM64 服务。Windows Docker Desktop 尚未进行 Windows 实机验收；需使用 Linux containers，并在 Windows 自行完成容器登录、API key 输入及主机 Kokoro 连接测试。
+后续内置 TTS 更新：105 项应用测试、3 项 Python 服务测试、类型检查、Docker 与 Sites 构建通过。两个正式容器均健康；日语、美式/英式英语、中文短句实际合成约 0.6–1 秒。独立 `--network none` 临时容器验证了离线启动和三种语言合成；停用旧主机 8880 服务后，3003 和 3002 均返回有效 WAV。内置浏览器验证默认模型、41 个音色、播放/停止、第三方缺少密钥提示与桌面/390px 窄屏。没有执行付费 TTS 请求或产生缓存音频文件。原独立 TTS 代码/模型保留作试用回退。
+
+此前的网站/Codex Linux AMD64 镜像已在 OrbStack x86 仿真下完整构建并启动，首页、健康检查、API-only 配置和 AMD64 Codex CLI 0.160.0 均通过。本次新增 Kokoro 镜像实测为 ARM64；依赖与基础镜像支持 AMD64，但尚未验证 AMD64 合成或 Windows 实机。日常保留 ARM64 服务。Windows Docker Desktop 使用 Linux containers，并需在 Windows 自行完成容器登录、API key 输入及内置 Kokoro 朗读测试。
 
 参考：[OrbStack 容器访问 Mac](https://docs.orbstack.dev/docker/network#connecting-to-servers-on-mac)、[Docker Desktop 主机网络](https://docs.docker.com/desktop/features/networking/networking-how-tos/)、[官方 Codex 认证](https://learn.chatgpt.com/docs/auth)、[Vinext 官方 Node 部署](https://github.com/cloudflare/vinext)。

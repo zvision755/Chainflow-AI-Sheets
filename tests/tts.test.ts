@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLocalTtsHandler } from '../build/local-tts-http';
-import { defaultTtsConfig, readTtsConfig, ttsBaseUrl, validateTtsConfig } from '../core/tts';
+import { defaultTtsConfig, readTtsConfig, ttsBaseUrl, validateTtsConfig, externalTtsConfig, externalTtsUrl } from '../core/tts';
 import { parseSheet, serialize } from '../core/storage';
 import { savedExample } from '../core/example-workflow';
 import { Scheduler } from '../core/scheduler';
@@ -12,7 +12,7 @@ const payload = { url: defaultTtsConfig.url, model: 'kokoro', input: 'フレー�
 const request = (body: unknown = payload, origin = base, headers = {}) => new Request(base + '/api/local-tts/speech', { method: 'POST', headers: { origin, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
 function wav() { const bytes = new Uint8Array(44); bytes.set(new TextEncoder().encode('RIFF'),0); bytes.set(new TextEncoder().encode('WAVE'),8); return bytes; }
 test('TTS targets normalize only local speech endpoints and reject redirects/remote credentials', () => {
-  assert.equal(ttsBaseUrl('http://localhost:8880/v1/audio/speech'), defaultTtsConfig.url);
+  assert.equal(ttsBaseUrl('http://localhost:8880/v1/audio/speech'), 'http://127.0.0.1:8880/v1');
   assert.equal(ttsBaseUrl('http://[::1]:8880'), 'http://[::1]:8880/v1');
   for (const url of ['https://evil.example/v1', 'http://192.168.0.1:8880/v1', 'http://127.0.0.1:8880/admin', 'file:///tmp/key', 'http://key:secret@127.0.0.1:8880/v1', 'http://127.0.0.1:8880/v1?url=x', 'http://127.0.0.1:22/v1', 'http://127.0.0.1:8880/v1#key']) assert.throws(() => ttsBaseUrl(url));
   assert.throws(() => validateTtsConfig({ ...defaultTtsConfig, voices: { ...defaultTtsConfig.voices, ja: 'af_heart' } }));
@@ -41,7 +41,7 @@ test('TTS sends language-specific speech once and returns uncached binary bytes'
   let destination = '', sent: any;
   const handler = createLocalTtsHandler((async (url, init) => { destination=String(url);sent=init;return new Response(wav(),{headers:{'Content-Type':'audio/wav'}}); }) as typeof fetch);
   const r=await handler(request(),'speech');
-  assert.equal(destination,'http://127.0.0.1:8880/v1/audio/speech');assert.equal(sent.redirect,'error');assert.equal(sent.cache,'no-store');assert.equal(sent.headers.Authorization,undefined);
+  assert.equal(destination,'http://127.0.0.1:8881/v1/audio/speech');assert.equal(sent.redirect,'error');assert.equal(sent.cache,'no-store');assert.equal(sent.headers.Authorization,undefined);
   assert.deepEqual(JSON.parse(sent.body),{model:'kokoro',input:'フレーム',voice:'jf_alpha',language:'ja',speed:1,response_format:'wav',stream:false});
   assert.equal(r.headers.get('Cache-Control'),'no-store');assert.equal(r.headers.get('Content-Type'),'audio/wav');assert.deepEqual(new Uint8Array(await r.arrayBuffer()),wav());
 });
@@ -85,3 +85,25 @@ test('autoplay restriction offers user-triggered playback without a second synth
   await player.speak('A','text','ja',defaultTtsConfig);assert.equal(player.snapshot().phase,'ready');await player.resume();assert.equal(player.snapshot().phase,'playing');assert.equal(calls,1);player.stop();
 });
 test('production explicitly disables local TTS',async()=>{assert.equal((await capabilities().json() as any).tts,false);});
+
+test('bundled defaults migrate the old host model without saving credentials or changing voices',()=>{
+  const old={...defaultTtsConfig,provider:undefined,url:'http://127.0.0.1:8880/v1',apiKey:'private-key'};
+  assert.deepEqual(readTtsConfig(JSON.stringify(old)),defaultTtsConfig);
+  assert.equal(validateTtsConfig({...externalTtsConfig,apiKey:'private-key'}).url,'https://api.openai.com/v1');
+  assert.equal(JSON.stringify(validateTtsConfig({...externalTtsConfig,apiKey:'private-key'})).includes('private-key'),false);
+  assert.equal(readTtsConfig(JSON.stringify({...old,url:'http://127.0.0.1:9000/v1'})).provider,'external');
+  for(const url of ['https://evil.example/v1','http://api.openai.com/v1','https://api.openai.com:444/v1','https://key:password@api.openai.com/v1','https://api.openai.com/v1?key=secret','http://192.168.0.1/v1'])assert.throws(()=>externalTtsUrl(url));
+});
+test('third-party speech forwards an explicit session key once with no language extension or key in body',async()=>{
+  let sent:any,url='';const handler=createLocalTtsHandler((async(u,i)=>{url=String(u);sent=i;return new Response(wav());}) as typeof fetch);
+  const response=await handler(request({...payload,url:'https://api.openai.com/v1/audio/speech',model:'gpt-4o-mini-tts',voice:'alloy'},base,{Authorization:'Bearer tts-session-key'}),'speech');
+  assert.equal(response.status,200);assert.equal(url,'https://api.openai.com/v1/audio/speech');assert.equal(sent.headers.Authorization,'Bearer tts-session-key');
+  assert.equal(JSON.parse(sent.body).language,undefined);assert.equal(sent.body.includes('tts-session-key'),false);assert.equal(response.headers.get('cache-control'),'no-store');
+});
+test('external connection tests validate account without synthesis and sanitize auth failure',async()=>{
+  let calls=0,url='';const handler=createLocalTtsHandler((async(u)=>{calls++;url=String(u);return Response.json({data:[{id:'tts-1'}],private:'never echo'});}) as typeof fetch);
+  assert.equal((await handler(request({url:'https://api.openai.com/v1'}),'voices')).status,401);assert.equal(calls,0);
+  const response=await handler(request({url:'https://api.openai.com/v1'},base,{Authorization:'Bearer tts-key'}),'voices');assert.equal(url,'https://api.openai.com/v1/models');assert.deepEqual(await response.json(),{voices:[]});
+  const bad=createLocalTtsHandler((async()=>Response.json({error:'provider private key diagnostics'},{status:401})) as typeof fetch);
+  const failed=await bad(request({...payload,url:'https://api.openai.com/v1',voice:'alloy'},base,{Authorization:'Bearer private-key'}),'speech');assert.equal(failed.status,502);assert.equal((await failed.text()).includes('private'),false);
+});

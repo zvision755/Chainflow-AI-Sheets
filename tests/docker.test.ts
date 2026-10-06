@@ -49,3 +49,9 @@ test('Docker TTS maps only validated loopback endpoints to the host and preserve
   await fixture({ttsFetcher:mapped},async base=>{const response=await fetch(base+'/api/local-tts/voices',{method:'POST',headers:{origin:base,'content-type':'application/json'},body:JSON.stringify({url:'http://localhost:8880/v1'})});assert.equal(response.status,200);assert.equal(destination,'http://host.docker.internal:8880/v1/audio/voices');assert.match(response.headers.get('cache-control')!,/no-store/);});
   assert.throws(()=>mapped('https://evil.example/v1/audio/voices'),/Unexpected/);
 });
+
+test('Docker bundled speech uses the project service and never the Mac or an external credential',async()=>{
+  let destination='';await fixture({builtinTtsFetcher:(async(u,i)=>{destination=String(u);assert.equal(new Headers(i?.headers).has('authorization'),false);return Response.json({voices:['jf_alpha','af_heart']});}) as typeof fetch,ttsFetcher:(async()=>{throw Error('Host service must not be used');}) as typeof fetch},async base=>{
+    const response=await fetch(base+'/api/local-tts/voices',{method:'POST',headers:{origin:base,'content-type':'application/json'},body:JSON.stringify({url:'builtin'})});assert.equal(response.status,200);assert.equal(destination,'http://kokoro:8880/v1/audio/voices');
+  });
+});

@@ -1,0 +1,5 @@
+*
+!Dockerfile
+!requirements.lock
+!download_models.py
+!service.py

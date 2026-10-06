@@ -8,8 +8,8 @@ import { createLocalTtsHandler } from '../build/local-tts-http';
 export function hostTtsFetch(fetcher:typeof fetch=fetch):typeof fetch {
   return (input,init)=>{const url=new URL(String(input));if(!['127.0.0.1','localhost','[::1]'].includes(url.hostname))throw Error('Unexpected TTS destination');url.hostname='host.docker.internal';return fetcher(url,init);};
 }
-export function createDockerHandler(options:{bridge?:Pick<CodexBridge,'status'|'generate'>;fetcher?:typeof fetch;ttsFetcher?:typeof fetch}={}) {
-  const tts=createLocalTtsHandler(options.ttsFetcher??hostTtsFetch());
+export function createDockerHandler(options:{bridge?:Pick<CodexBridge,'status'|'generate'>;fetcher?:typeof fetch;ttsFetcher?:typeof fetch;builtinTtsFetcher?:typeof fetch}={}) {
+  const tts=createLocalTtsHandler((input,init)=>['127.0.0.1','localhost','[::1]'].includes(new URL(String(input)).hostname) ? (options.ttsFetcher??hostTtsFetch())(input,init) : (options.fetcher??fetch)(input,init),90000,{url:'http://kokoro:8880/v1',fetcher:options.builtinTtsFetcher??fetch});
   return async(request:Request):Promise<Response|null>=>{
     const url=new URL(request.url);
     // Only localhost browser access. Port publishing is additionally loopback-only.
