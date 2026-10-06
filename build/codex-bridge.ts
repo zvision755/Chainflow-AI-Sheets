@@ -15,6 +15,9 @@ export function codexEnvironment(source:NodeJS.ProcessEnv,proxy?:string){
   return env;
 }
 export function findCodexBinary(){
+  if(process.env.CHAINFLOW_CODEX_BIN){
+    try{accessSync(process.env.CHAINFLOW_CODEX_BIN,constants.X_OK);return process.env.CHAINFLOW_CODEX_BIN;}catch{throw new LocalAgentError('codex_missing','配置的 Codex 程序缺失，请重新安装应用或检查路径',503);}
+  }
   const paths=[process.env.CHAINFLOW_CODEX_BIN,
     '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex',
     '/Applications/Codex.app/Contents/Resources/codex',
@@ -50,7 +53,7 @@ export class CodexBridge {
   private version='';
   private models:CodexModel[]=[];
   private catalogAt=0;
-  constructor(private cwd:string,private proxy?:string,private factory?:()=>Promise<CodexTransport>){ }
+  constructor(private cwd:string,private proxy?:string,private factory?:()=>Promise<CodexTransport>,private isolatedLogin=false){ }
   private async connect(){
     if(this.closed)throw new LocalAgentError('codex_disconnected','本地 Agent 服务已停止',503);
     if(this.transport)return this.transport;
@@ -63,7 +66,9 @@ export class CodexBridge {
         try{this.version=execFileSync(binary,['--version'],{encoding:'utf8',timeout:3000}).trim();}catch{throw new LocalAgentError('codex_version','无法启动 Codex，请检查本地安装',503);}
         let config='';try{config=readFileSync(join(process.env.CODEX_HOME??join(homedir(),'.codex'),'config.toml'),'utf8');}catch{}
         mkdirSync(this.cwd,{recursive:true});
-        const child=new StdioCodexTransport(binary,codexArguments(config),this.cwd,codexEnvironment(process.env,this.proxy));
+        const args=codexArguments(config);
+        if(this.isolatedLogin)args.push('-c','cli_auth_credentials_store="file"');
+        const child=new StdioCodexTransport(binary,args,this.cwd,codexEnvironment(process.env,this.proxy));
         try{await child.initialize();}catch(error){child.close();throw error;}
         transport=child;
       }
@@ -90,6 +95,8 @@ export class CodexBridge {
     this.models=models;this.catalogAt=Date.now();return models;
   }
   async status():Promise<CodexStatus>{const transport=await this.connect(),plan=await this.account(transport);this.catalogAt=0;const models=await this.catalog(transport);return {connected:true,auth:'chatgpt',plan,version:this.version,models,defaultModel:'gpt-6-luna',transport:'app-server'};}
+  async login(){const transport=await this.connect();const result=await transport.request('account/login/start',{type:'chatgpt'});const url=new URL(result.authUrl);if(url.protocol!=='https:'||!['auth.openai.com','chatgpt.com'].includes(url.hostname)||url.username||url.password)throw new LocalAgentError('codex_login','登录服务返回了不支持的地址',502);return {authUrl:url.href};}
+  async logout(){const transport=await this.connect();await transport.request('account/logout',{});this.models=[];this.catalogAt=0;}
   async generate(input:GenerateInput,signal:AbortSignal,onText?:(text:string)=>void):Promise<GenerateResult>{
     if(this.active>=3)throw new LocalAgentError('codex_busy','本地 Codex 最多允许 3 个并发任务',429,true);
     this.active++;

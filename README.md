@@ -4,9 +4,11 @@
 
 ## 启动
 
+**Mac 桌面测试版**：到 [GitHub Releases](https://github.com/zvision755/Chainflow-AI-Sheets/releases) 下载 DMG，拖入应用程序后打开，无需终端、Docker 或 LaunchManager。Full MLX 版包含 Kokoro 模型，仅适用 M 系列 Mac；Lite Universal 版不含模型，提供第三方 TTS 接口。均要求 macOS 14+，未使用 Developer ID 签名或 Apple 公证，首次打开可能需在系统设置中选择「仍要打开」。详见 [安装说明](macos/INSTALL.md) 和 [桌面版架构与构建](macos/README.md)。
+
 长期在 OrbStack / Windows Docker Desktop 运行，可在项目根目录执行 `docker compose up -d --build`，访问 `http://127.0.0.1:3003`。详见 [Docker 启动、登录、TTS 与迁移说明](docker/README.md)。Docker 使用独立 Node 正式构建，原有 Mac 3002 开发服务和 Sites 构建继续保留。
 
-需要 Node.js 22.13 或更高版本。本次使用 Node 26.10.0。所有项目依赖都在项目内 `node_modules`，版本由 `package-lock.json` 锁定，不依赖全局项目包。项目没有使用 Python；如果以后添加 Python，请建立并使用本项目 `.venv`。
+从源码运行前端需要 Node.js 22.13 或更高版本。所有项目依赖都在项目内 `node_modules`，版本由 `package-lock.json` 锁定，不依赖全局项目包。TTS 开发分别使用项目内 `tts/.venv`（Docker CPU）和 `macos/tts/.venv`（Mac MLX）；Python 版本及依赖由各目录的 `pyproject.toml`、`uv.lock` 管理。
 
 ```sh
 git clone https://github.com/zvision755/Chainflow-AI-Sheets.git

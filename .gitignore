@@ -60,3 +60,7 @@ next-env.d.ts
 /tts/.venv/
 /tts/models/
 **/__pycache__/
+/macos/tts/.venv/
+/macos/tts/models/
+/macos/release/
+/macos/staging/
