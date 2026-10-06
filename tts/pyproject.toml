@@ -1,0 +1,23 @@
+[project]
+name = "chainflow-kokoro"
+version = "1.0.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "kokoro-onnx==0.6.1",
+  "misaki[ja,zh]==0.9.4",
+  "unidic-lite==1.0.8",
+  "spacy==3.8.16",
+  "num2words==0.5.14",
+  "phonemizer-fork==3.3.2",
+  "espeakng-loader==0.2.4",
+  "en-core-web-sm",
+  "fastapi==0.142.2",
+  "uvicorn==0.54.0",
+  "soundfile==0.14.0",
+  "onnxruntime==1.30.0",
+]
+[tool.uv.sources]
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
+
+[dependency-groups]
+dev = ["httpx==0.28.1"]

@@ -55,3 +55,8 @@ next-env.d.ts
 /test-results/
 /local-only/
 /.cache/
+
+# Project-local Python environment and bundled model development cache
+/tts/.venv/
+/tts/models/
+**/__pycache__/

@@ -19,8 +19,8 @@ export function localApi(): Plugin {
   return {name:'chainflow-local-api',apply:'serve',configureServer(server){
     const url=systemProxy();const agent=url?new ProxyAgent(url):undefined;
     const codex=new CodexBridge(join(server.config.root,'outputs/codex-workspace'),url);
-    const tts=createLocalTtsHandler();
     const forward:typeof fetch=(input,init)=>fetch(input,{...init,...(agent?{dispatcher:agent}:{})} as RequestInit);
+    const tts=createLocalTtsHandler(forward,90000,{url:'http://127.0.0.1:8881/v1',fetcher:fetch});
     server.middlewares.use(async(req,res,next)=>{
       const path=req.url?.split('?')[0];if(!['/api/generate','/api/models','/api/capabilities','/api/local-agent/status','/api/local-agent/generate','/api/local-tts/voices','/api/local-tts/speech'].includes(path??''))return next();
       const host=req.headers.host??'127.0.0.1:3002';

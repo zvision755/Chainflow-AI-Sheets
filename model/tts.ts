@@ -1,14 +1,14 @@
-import type { SpokenLanguage, TtsConfig } from '../core/tts';
-export async function loadTtsVoices(url: string, signal: AbortSignal): Promise<string[]> {
-  const response = await fetch('/api/local-tts/voices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }), signal, cache: 'no-store' });
+import type { SpokenLanguage, TtsConfig, TtsSession } from '../core/tts';
+export async function loadTtsVoices(url: string, signal: AbortSignal, apiKey = ''): Promise<string[]> {
+  const response = await fetch('/api/local-tts/voices', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(apiKey ? {Authorization: `Bearer ${apiKey}`} : {}) }, body: JSON.stringify({ url }), signal, cache: 'no-store' });
   const data = await response.json() as { voices: string[]; error?: { message: string } };
   if (!response.ok) throw new Error(data.error?.message ?? '无法连接 TTS 服务');
   return data.voices;
 }
-export async function synthesizeSpeech(text: string, language: SpokenLanguage, config: TtsConfig, signal: AbortSignal): Promise<Blob> {
+export async function synthesizeSpeech(text: string, language: SpokenLanguage, config: TtsSession, signal: AbortSignal): Promise<Blob> {
   if (!text.trim()) throw new Error('单元格没有可朗读的文字');
   if (text.trim().length > 4096) throw new Error('单次最多朗读 4096 个字符，请缩短单元格文字');
-  const response = await fetch('/api/local-tts/speech', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: config.url, model: config.model, speed: config.speed, voice: config.voices[language], language, input: text.trim() }), signal, cache: 'no-store' });
+  const response = await fetch('/api/local-tts/speech', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(config.provider === 'external' && config.apiKey ? {Authorization: `Bearer ${config.apiKey}`} : {}) }, body: JSON.stringify({ url: config.url, model: config.model, speed: config.speed, voice: config.voices[language], language, input: text.trim() }), signal, cache: 'no-store' });
   if (!response.ok) { const data = await response.json().catch(() => null) as { error?: { message: string } } | null; throw new Error(data?.error?.message ?? 'TTS 合成失败，请重试'); }
   if (!response.headers.get('content-type')?.startsWith('audio/wav')) throw new Error('TTS 返回了不支持的音频格式');
   if (Number(response.headers.get('content-length')) > 32 * 1024 * 1024) { await response.body?.cancel(); throw new Error('音频过大，请缩短单元格文字'); }
@@ -43,7 +43,7 @@ export class SpeechPlayer {
   }
   stop = () => { this.generation++; this.controller?.abort(); this.controller = undefined; this.releaseAudio(); this.spoken = undefined; this.update({ phase: 'idle' }); };
   cancelIfChanged(key: string | undefined, text?: string, language?: string) { if (this.spoken && (this.spoken.key !== key || this.spoken.text !== text || this.spoken.language !== language)) this.stop(); }
-  async speak(key: string, text: string, language: SpokenLanguage, config: TtsConfig) {
+  async speak(key: string, text: string, language: SpokenLanguage, config: TtsSession) {
     this.stop(); const generation = this.generation;
     const controller = new AbortController(); this.controller = controller; this.spoken = { key, text, language };
     this.update({ key, phase: 'loading' });
