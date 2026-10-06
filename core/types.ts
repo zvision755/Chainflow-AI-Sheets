@@ -18,7 +18,15 @@ export type RunOptions = { agentModel?:string; mode: 'api'|'agent'; agentBackend
 export const labels: Record<Status,string> = {idle:'待运行',queued:'排队',running:'生成中',done:'完成',error:'失败',cancelled:'已取消',stale:'需要更新'};
 export const emptyCell = (value = '', status: Status = 'idle'): Cell => ({value,status,revision:0});
 export const newColumn = (id: string, name: string, sources: string[]): Column => ({id,name,sources,prompt:'',userPrompt:'{{text}}',model:'gpt-6-luna',maxTokens:1024,reasoning:'none',check:false,minLength:1,containsSource:false,ttsLanguage:'off'});
-export const id = () => crypto.randomUUID();
+export const id = () => {
+  const cryptoApi=globalThis.crypto;
+  if(typeof cryptoApi.randomUUID==='function')return cryptoApi.randomUUID();
+  // randomUUID is secure-context-only; LAN HTTP origins may expose only getRandomValues.
+  const bytes=cryptoApi.getRandomValues(new Uint8Array(16));
+  bytes[6]=(bytes[6]&0x0f)|0x40;bytes[8]=(bytes[8]&0x3f)|0x80;
+  const hex=Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+};
 export function example(): Sheet {
   const input = newColumn('input','日语单词',[]);
   const explain = {...newColumn('explain','日语释义',['input']),prompt:'用日语解释这日语单词，输出必须要用到原单词',containsSource:true};
