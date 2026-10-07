@@ -77,6 +77,23 @@ CHAINFLOW_HTTP_PROXY=http://host.docker.internal:7897
 
 Compose 将该设置用于构建阶段的 npm、Python 和模型下载，以及运行阶段的 API/Codex 外部请求；内置 TTS 请求仅走容器内部网络，第三方远程 TTS 使用运行时代理；代理设置不放入浏览器。只接受主机/回环 HTTP(S) 代理，不接受含账号密码、查询参数或任意远程地址的代理。代理地址里的 127.0.0.1 指容器本身，主机代理要使用 host.docker.internal。未设置时正常直连。构建使用下载缓存和有限重试，网络中断后可再次执行构建，模型必须完整通过哈希校验才会使用。
 
+## Codex 登录连接问题
+
+Docker 运行镜像安装系统 `ca-certificates`，供容器 Codex 校验 OpenAI HTTPS 证书。旧镜像缺少证书包时可能报 `error sending request for url`；拉取本修复后需重新构建并创建主服务，单纯重启旧容器不会更新镜像：
+
+```sh
+git pull --ff-only origin main
+docker compose up -d --build app
+```
+
+若认证仍失败，检查代理连通性。`CHAINFLOW_HTTP_PROXY` 由应用用于推理连接；直接运行容器里的登录 CLI 时，如需代理，请显式传入 `HTTPS_PROXY` / `HTTP_PROXY`（以下为主机代理端口示例）：
+
+```sh
+docker compose exec -e HTTPS_PROXY=http://host.docker.internal:7897 -e HTTP_PROXY=http://host.docker.internal:7897 app /app/node_modules/.bin/codex -c 'cli_auth_credentials_store="file"' login --device-auth
+```
+
+在 ChatGPT 安全设置启用设备码登录后，重新运行命令获取新的设备码，由自己完成浏览器授权。登录完成后执行 `docker compose exec app /app/node_modules/.bin/codex login status`，再点击页面「重新连接 / 更新模型」。不要关闭 TLS 证书校验，也不要提交 `.env` 或登录卷中的凭证。
+
 ## 安全与健康检查
 
 多阶段镜像仅包含正式前端/服务端、运行依赖和 Codex；构建上下文采用目录白名单，忽略 `.env`、auth.json、txt 密钥文件、node_modules、输出/浏览器备份和 Git/tool state。运行用户为 `node`，根文件系统只读，临时工作区在 `/tmp`，仅 Codex 专用卷可持久写入（TTS 模型只读）；不挂载 Docker socket 或主机目录。进程退出有停止时限，容器日志滚动限制为 3×10 MB，应用不记录请求正文、Authorization、密钥或 Codex 原始诊断。
@@ -99,6 +116,8 @@ Docker 专项模拟测试覆盖真实 Node HTTP 的增量传输、取消、依�
 
 后续内置 TTS 更新：105 项应用测试、3 项 Python 服务测试、类型检查、Docker 与 Sites 构建通过。两个正式容器均健康；日语、美式/英式英语、中文短句实际合成约 0.6–1 秒。独立 `--network none` 临时容器验证了离线启动和三种语言合成；停用旧主机 8880 服务后，3003 和 3002 均返回有效 WAV。内置浏览器验证默认模型、41 个音色、播放/停止、第三方缺少密钥提示与桌面/390px 窄屏。没有执行付费 TTS 请求或产生缓存音频文件。原独立 TTS 代码/模型保留作试用回退。
 
-此前的网站/Codex Linux AMD64 镜像已在 OrbStack x86 仿真下完整构建并启动，首页、健康检查、API-only 配置和 AMD64 Codex CLI 0.160.0 均通过。本次新增 Kokoro 镜像实测为 ARM64；依赖与基础镜像支持 AMD64，但尚未验证 AMD64 合成或 Windows 实机。日常保留 ARM64 服务。Windows Docker Desktop 使用 Linux containers，并需在 Windows 自行完成容器登录、API key 输入及内置 Kokoro 朗读测试。
+此前的网站/Codex Linux AMD64 镜像已在 OrbStack x86 仿真下完整构建并启动，首页、健康检查、API-only 配置和 AMD64 Codex CLI 0.160.0 均通过。本次新增 Kokoro 镜像实测为 ARM64；依赖与基础镜像支持 AMD64；截至该次验证，尚未验证 AMD64 合成或 Windows 实机。后续 Windows 验证见下文。日常保留 ARM64 服务。Windows Docker Desktop 使用 Linux containers，并需在 Windows 自行完成容器登录、API key 输入及内置 Kokoro 朗读测试。
+
+2026-10-08 已在 Windows Docker Desktop 的 Linux AMD64 容器验证 v0.3.0：补齐系统 CA 证书后，使用主机代理完成容器 ChatGPT 设备码登录；登录状态显示 `Logged in using ChatGPT`，Agent 状态接口返回 `connected: true`，加载 8 个模型。用户随后确认 Windows Docker Agent 模式实际生成测试成功。登录保存在原专用数据卷中；网页、健康接口和内置 Kokoro 41 个音色列表均通过。Mac Docker/OrbStack 的此次 Agent 登录与实际生成仍待用户更新后验证；此修复不重新打包 macOS DMG。
 
 参考：[OrbStack 容器访问 Mac](https://docs.orbstack.dev/docker/network#connecting-to-servers-on-mac)、[Docker Desktop 主机网络](https://docs.docker.com/desktop/features/networking/networking-how-tos/)、[官方 Codex 认证](https://learn.chatgpt.com/docs/auth)、[Vinext 官方 Node 部署](https://github.com/cloudflare/vinext)。
