@@ -1,5 +1,5 @@
 // Developer-only downloads. The installed apps never run this script.
-import {readFileSync,writeFileSync,mkdirSync,existsSync,copyFileSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdirSync,existsSync,renameSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {dirname} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -15,7 +15,7 @@ function download(url,path,hash,algorithm='sha256'){
  mkdirSync(dirname(path),{recursive:true});
  execFileSync('curl',['--fail','--location','--retry','5','--retry-all-errors','--max-time','300',url,'-o',path+'.part'],{stdio:'inherit'});
  if(digest(path+'.part',algorithm)!==hash)throw Error(`Checksum mismatch: ${path}`);
- copyFileSync(path+'.part',path);
+ renameSync(path+'.part',path);
 }
 for(const arch of ['arm64','x64']){
  const file=`.cache/macos/node-${arch}.tar.gz`;

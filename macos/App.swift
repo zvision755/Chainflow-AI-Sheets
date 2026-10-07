@@ -47,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         for (title,action,key) in [("撤销","undo:","z"),("剪切","cut:","x"),("复制","copy:","c"),("粘贴","paste:","v"),("全选","selectAll:","a")] {edit.addItem(withTitle:title,action:NSSelectorFromString(action),keyEquivalent:key)}
         NSApp.mainMenu=root
     }
-    @objc func about() { let alert=NSAlert(); alert.messageText="ChainFlow AI Sheets 0.2.0"; alert.informativeText="\(full ? "完整版 · Apple Silicon MLX/Metal 朗读" : "精简版 · 第三方 TTS")\n未签名、未公证测试版。表格保存在此应用；API 使用自己的密钥，Agent 首次使用需登录 ChatGPT。"; alert.runModal() }
+    @objc func about() { let alert=NSAlert(); alert.messageText="ChainFlow AI Sheets \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")"; alert.informativeText="\(full ? "完整版 · Apple Silicon MLX/Metal 朗读" : "精简版 · 第三方 TTS")\n未签名、未公证测试版。表格保存在此应用；API 使用自己的密钥，Agent 首次使用需登录 ChatGPT。"; alert.runModal() }
     func sparePort() throws -> UInt16 {
         let fd=socket(AF_INET,SOCK_STREAM,0); if fd<0 {throw NSError(domain:"socket",code:1)}; defer{close(fd)}
         var address=sockaddr_in(); address.sin_len=UInt8(MemoryLayout<sockaddr_in>.size); address.sin_family=sa_family_t(AF_INET); address.sin_addr.s_addr=inet_addr("127.0.0.1"); address.sin_port=0

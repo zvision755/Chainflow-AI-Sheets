@@ -2,7 +2,7 @@
 
 中文表格式 AI 工作流：每行是一组数据，生成列按依赖顺序处理前面列的结果。新版从零实现，已替换 Google AI Studio 旧版。支持自带密钥的 API 模式、Codex 订阅 Agent、流式输出、多工作表管理、历史结果和内置 Kokoro 朗读。
 
-**Docker 是当前主要维护版本**，同一项目可部署在 Mac OrbStack 或 Windows Docker Desktop，也可供可信局域网中的 iPad 等设备通过浏览器使用。Kokoro 在容器内使用 ONNX CPU，第三方 TTS API 仍可选。macOS DMG 测试版保留为可选方案；其 Full 版使用 MLX，但本次没有重新发布 DMG。
+**Docker 是当前主要维护版本**，同一项目可部署在 Mac OrbStack 或 Windows Docker Desktop，也可供可信局域网中的 iPad 等设备通过浏览器使用。Kokoro 在容器内使用 ONNX CPU，第三方 TTS API 仍可选。macOS DMG 测试版作为可选方案；其 Full 版使用 MLX。v0.3.0 桌面安装包单独发布为未签名测试版。
 
 当前源码版本：**v0.3.0**。完整功能变更、验证范围和更新步骤见 [更新记录](CHANGELOG.md)。
 
@@ -18,7 +18,7 @@ docker compose up -d --build
 
 更新已部署的源码：先在网页导出 JSON 备份，再执行 `git pull --ff-only origin main` 和 `docker compose up -d --build`，最后刷新原访问地址。不要删除数据卷。浏览器保存的旧单表格会自动迁移为工作簿。
 
-**可选 Mac 桌面测试版**：到 [GitHub Releases](https://github.com/zvision755/Chainflow-AI-Sheets/releases) 下载此前发布的 DMG，拖入应用程序后打开，无需终端、Docker 或 LaunchManager。Full MLX 版包含 Kokoro 模型，仅适用 M 系列 Mac；Lite Universal 版不含模型，提供第三方 TTS 接口。均要求 macOS 14+，未使用 Developer ID 签名或 Apple 公证，首次打开可能需在系统设置中选择「仍要打开」。这些旧安装包不包含 v0.3.0 新增功能。详见 [安装说明](macos/INSTALL.md) 和 [桌面版架构与构建](macos/README.md)。
+**可选 Mac 桌面测试版**：到 [GitHub Releases](https://github.com/zvision755/Chainflow-AI-Sheets/releases) 下载 v0.3.0-macos-beta.1 的 DMG，拖入应用程序后打开，无需终端、Docker 或 LaunchManager。Full MLX 版包含 Kokoro 模型，仅适用 M 系列 Mac；Lite Universal 版不含模型，提供第三方 TTS 接口。均要求 macOS 14+，未使用 Developer ID 签名或 Apple 公证，首次打开可能需在系统设置中选择「仍要打开」。新版安装包包含 v0.3.0 多工作表、历史结果与 Excel 导出功能。详见 [安装说明](macos/INSTALL.md) 和 [桌面版架构与构建](macos/README.md)。
 
 从源码运行前端需要 Node.js 22.13 或更高版本。所有项目依赖都在项目内 `node_modules`，版本由 `package-lock.json` 锁定，不依赖全局项目包。TTS 开发分别使用项目内 `tts/.venv`（Docker CPU）和 `macos/tts/.venv`（Mac MLX）；Python 版本及依赖由各目录的 `pyproject.toml`、`uv.lock` 管理。
 

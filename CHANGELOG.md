@@ -1,5 +1,12 @@
 # 更新记录
 
+## v0.3.0-macos-beta.1 — 2026-10-07
+
+- 为 v0.3.0 提供 Full MLX arm64 和 Lite Universal 两个独立窗口 DMG；macOS 14+，未使用 Developer ID 签名或 Apple 公证。
+- Full 模型默认不加载，手动确认约 900 MB 内存提示后启用；只有明确选择记住许可才自动加载。
+- 安装包版本号与源码 package.json 同步，关于窗口不再固定显示旧版本号。
+- 不包含开发者密钥、Codex 登录或浏览器数据；本次不修改 Docker 的默认部署方式。
+
 ## v0.3.0 — 2026-10-07
 
 本次以 Docker 为主要维护和部署方式，支持 Mac OrbStack、Windows Docker Desktop，以及可信局域网设备的浏览器访问。现有 macOS DMG 测试版保留；本次未重新打包桌面安装包。

@@ -1,4 +1,4 @@
-# ChainFlow AI Sheets 0.2.0 · 未签名测试版
+# ChainFlow AI Sheets 0.3.0 · 未签名测试版
 
 1. 打开 DMG，将应用拖到 Applications（应用程序）。
 2. 双击应用。如果 macOS 阻止首次打开，请按 Apple 官方说明，在系统设置 → 隐私与安全中由你选择「仍要打开」。本版本没有 Developer ID 签名或 Apple 公证，不要关闭整个系统的安全保护。
