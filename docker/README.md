@@ -2,6 +2,10 @@
 
 适用于 Mac OrbStack 和 Windows Docker Desktop（Linux containers）。同一份 Dockerfile 按主机架构安装 Linux 原生依赖，支持 ARM64 和 AMD64。Docker 使用 Node 正式构建，不运行 Vite 开发服务、不挂载 Mac 路径，也不依赖 LaunchManager。默认访问地址为 **http://127.0.0.1:3003**，原 Mac 开发版仍在 3002。
 
+## v0.3.0 更新
+
+Docker 是主要维护版本。更新前先导出网页 JSON 备份，在项目目录执行 `git pull --ff-only origin main`、`docker compose up -d --build`，随后刷新原页面。工作簿数据存于浏览器，旧版单表格自动迁移；容器登录卷保留，不需要 `down -v`。本次新增多工作表管理、可调历史数量、触摸行高与独立标签 Excel 导出，并修复 LAN HTTP 生成与朗读。完整说明见 [更新记录](../CHANGELOG.md)。
+
 ## 启动与管理
 
 在项目根目录运行（PowerShell/终端均可）：

@@ -19,7 +19,7 @@ test('B reruns use exact configured messages even with duplicate checks enabled;
   for(let i=0;i<3;i++){e.run(e.targets('cell','row-1','explain'),options,true);await finish(e);assert.equal(e.sheet.rows[0].cells.explain.value,answers[i]);}
   assert.equal(payloads.length,3);assert.ok(payloads.every(p=>p.input==='フレーム'&&p.prompt===prompt));
   assert.equal(e.sheet.columns[1].prompt,prompt);assert.equal(e.sheet.rows[0].cells.teacher.value,'旧解释');assert.equal(e.sheet.rows[0].cells.teacher.status,'stale');assert.equal(e.running,0);assert.equal(e.queued,0);
-  const exported=serialize(e.sheet);assert.equal(parseSheet(JSON.parse(exported)).columns[1].freshResults,true);assert.ok(!exported.includes('内部请求标记'));assert.ok(!exported.includes(old));
+  const exported=serialize(e.sheet);assert.equal(parseSheet(JSON.parse(exported)).columns[1].freshResults,true);assert.ok(!exported.includes('内部请求标记'));assert.ok(parseSheet(JSON.parse(exported)).rows[0].cells.explain.history?.includes(old));
 });
 
 test('same result retries only when necessary without modifying messages, and usage includes both calls',async()=>{

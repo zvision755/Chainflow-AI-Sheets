@@ -15,12 +15,21 @@ async function bounded(response: Response, limit: number) {
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
   return bytes;
 }
-export function createLocalTtsHandler(fetcher: typeof fetch = fetch, speechTimeout = 90000, builtin = { url: 'http://127.0.0.1:8881/v1', fetcher }) {
+function isPrivateIPv4(hostname: string) {
+  const parts = hostname.split('.');
+  if (parts.length !== 4 || parts.some(part => !/^\d{1,3}$/.test(part) || Number(part) > 255)) return false;
+  const [a, b] = parts.map(Number);
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+export function createLocalTtsHandler(fetcher: typeof fetch = fetch, speechTimeout = 90000, builtin = { url: 'http://127.0.0.1:8881/v1', fetcher }, allowLan = false) {
   let active = 0;
   return async (request: Request, operation: 'voices' | 'speech') => {
     if (request.method !== 'POST') return fail('method', '请使用 POST 请求', 405);
-    const origin = new URL(request.url).origin;
-    if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(origin).hostname) || request.headers.get('origin') !== origin) return fail('origin', 'TTS 只接受本机同源页面请求', 403);
+    const pageUrl = new URL(request.url);
+    const origin = pageUrl.origin;
+    const localHost = ['127.0.0.1', 'localhost', '[::1]'].includes(pageUrl.hostname);
+    const lanHost = allowLan && isPrivateIPv4(pageUrl.hostname);
+    if ((!localHost && !lanHost) || request.headers.get('origin') !== origin) return fail('origin', 'TTS 只接受本机同源页面请求', 403);
     if (!request.headers.get('content-type')?.startsWith('application/json')) return fail('content_type', '请使用 JSON 请求', 415);
     const authorization = request.headers.get('authorization');
     if(authorization && !/^Bearer [^\s]{1,500}$/.test(authorization)) return fail('tts_key','TTS 密钥格式不正确',400);
