@@ -9,6 +9,24 @@ const connection={provider:'custom' as const,customUrl:'https://aihubmix.com/v1/
 const key='sk-fake-browser-only-123456789';
 test('credentials persist only with explicit opt-in; unchecking removes the stored key',()=>{const store=memory();saveConnection(store,connection,key,false);assert.ok(!store.getItem(CREDENTIAL_STORAGE)?.includes(key));assert.equal(loadConnection(store).key,'');saveConnection(store,connection,key,true);assert.equal(loadConnection(store).key,key);assert.deepEqual(loadConnection(store).connection,connection);saveConnection(store,connection,key,false);assert.ok(!store.getItem(CREDENTIAL_STORAGE)?.includes(key));assert.equal(loadConnection(store).remember,false);clearConnection(store);assert.equal(store.getItem(CREDENTIAL_STORAGE),null);});
 test('malformed browser storage safely returns a keyless official connection',()=>{const store=memory();for(const value of ['{bad','null',JSON.stringify({provider:'evil',key})]){store.setItem(CREDENTIAL_STORAGE,value);assert.equal(loadConnection(store).key,'');assert.equal(loadConnection(store).connection.provider,'openai');}});
-test('approved example includes exact two-row prompts and four completed results; load never calls API',()=>{const sheet=savedExample();assert.equal(sheet.rows.length,2);assert.equal(sheet.rows[0].cells.input.value,'フレーム');assert.equal(sheet.rows[1].cells.input.value,'水差し');assert.equal(sheet.columns[1].prompt,'给这个单词提供一个面向日语初学者的例句，只输出日语例句即可，不必输出任何多余字样');assert.match(sheet.columns[2].prompt,/零基础中文母语学习者/);assert.match(sheet.rows[0].cells.teacher.value,/I put the photo in a frame/);assert.match(sheet.rows[1].cells.teacher.value,/There is a water pitcher/);for(const row of sheet.rows)for(const col of sheet.columns.slice(1))assert.equal(row.cells[col.id].status,'done');let calls=0;const engine=new Scheduler(sheet,async()=>{calls++;throw Error('unexpected');});assert.equal(engine.estimate(engine.targets('all')),0);assert.equal(engine.running,0);assert.equal(calls,0);(sheet as any).key=key;assert.ok(!serialize(sheet).includes(key));assert.ok(!csv(sheet).includes(key));});
+test('approved browser example restores prompts, layout, history and six completed results without API calls',()=>{
+ const sheet=savedExample();assert.equal(sheet.rows.length,3);
+ assert.deepEqual(sheet.rows.map(r=>r.cells.input.value),['フレーム','壊れる','直す']);
+ assert.equal(sheet.columns[1].prompt,'给这个单词提供一个词典风格的日语例句，难度在n3-n2左右，只输出日语例句即可，不必输出任何多余字样');
+ assert.match(sheet.columns[1].userPrompt!,/已有结果：{{existing_result}}/);assert.equal(sheet.columns[2].userPrompt,'{{text}}');
+ assert.match(sheet.columns[2].prompt,/零基础中文母语学习者/);
+ assert.deepEqual(sheet.columns.map(c=>c.width),[180,260,520]);assert.deepEqual(sheet.columns.map(c=>c.historyLimit),[10,10,10]);
+ assert.equal(sheet.columns[2].maxTokens,4096);assert.deepEqual(sheet.columns.map(c=>c.ttsLanguage),['ja','ja','off']);
+ assert.match(sheet.rows[0].cells.teacher.value,/I had someone repair the frame/);
+ assert.match(sheet.rows[2].cells.teacher.value,/I couldn’t fix it even after reading/);
+ assert.equal(sheet.rows[1].cells.explain.history?.length,2);assert.equal(sheet.rows[1].cells.explain.historyIndex,1);
+ assert.match(sheet.rows[1].cells.explain.history![0],/長年使っていた時計/);
+ for(const row of sheet.rows)for(const col of sheet.columns.slice(1))assert.equal(row.cells[col.id].status,'done');
+ let calls=0;const engine=new Scheduler(sheet,async()=>{calls++;throw Error('unexpected');});assert.equal(engine.estimate(engine.targets('all')),0);assert.equal(engine.running,0);assert.equal(calls,0);
+ (sheet as any).key=key;assert.ok(!serialize(sheet).includes(key));assert.ok(!csv(sheet).includes(key));
+ sheet.rows[1].cells.explain.history!.push('changed');sheet.columns[1].prompt='changed';
+ assert.equal(savedExample().rows[1].cells.explain.history?.length,2);assert.notEqual(savedExample().columns[1].prompt,'changed');
+});
+
 import { defaultRunOptions, readRunOptions, writeRunOptions } from '../core/run-settings';
 test('run settings default to retry enabled and survive local save with a configurable delay',()=>{assert.equal(defaultRunOptions.autoRetry,true);const options={...defaultRunOptions,dependencyDelayMs:4500,autoRetry:false,retryDelayMs:5000};assert.deepEqual(readRunOptions(writeRunOptions(options)),options);assert.equal(readRunOptions('{broken'),null);assert.equal(readRunOptions(JSON.stringify({...options,dependencyDelayMs:70000})),null);});

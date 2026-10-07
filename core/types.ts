@@ -1,14 +1,16 @@
 export type Status = 'idle' | 'queued' | 'running' | 'done' | 'error' | 'cancelled' | 'stale';
-export type Cell = { value: string; status: Status; revision: number; error?: string; elapsed?: number; usage?: Usage; completedAt?: number; preview?: string };
+export type Cell = { value: string; status: Status; revision: number; error?: string; elapsed?: number; usage?: Usage; completedAt?: number; preview?: string; history?: string[]; historyIndex?: number };
 export type Usage = { input: number; output: number };
 import type { TtsLanguage } from './tts';
-export type Column = { id: string; name: string; sources: string[]; prompt: string; userPrompt?: string; model: string; maxTokens: number; reasoning: 'none'|'low'|'medium'|'high'; check: boolean; minLength: number; containsSource: boolean; ttsLanguage?: TtsLanguage; width?: number; freshResults?: boolean };
+export type Column = { id: string; name: string; sources: string[]; prompt: string; userPrompt?: string; model: string; maxTokens: number; reasoning: 'none'|'low'|'medium'|'high'; check: boolean; minLength: number; containsSource: boolean; ttsLanguage?: TtsLanguage; width?: number; freshResults?: boolean; historyLimit?: number };
 export const MIN_COLUMN_WIDTH = 180;
 export const MAX_COLUMN_WIDTH = 1200;
 export const defaultColumnWidth = (index: number) => [180, 260, 520, 300][index] ?? 330;
 export const columnWidth = (column: Column, index: number) => column.width ?? defaultColumnWidth(index);
-export type Row = { id: string; cells: Record<string, Cell> };
+export type Row = { id: string; cells: Record<string, Cell>; height?: number };
 export type Sheet = { version: 1; name: string; columns: Column[]; rows: Row[] };
+export const MIN_ROW_HEIGHT = 180;
+export const MAX_ROW_HEIGHT = 1200;
 export type GenerateInput = { model: string; prompt: string; input: string; maxTokens: number; reasoning: Column['reasoning']; stream?: boolean };
 export type GenerateResult = { text: string; usage: Usage };
 export type GenerateContext={mode:'api'|'agent';agentBackend?:'api'|'codex';stream?:boolean;onText?:(text:string)=>void;display?:boolean};
@@ -17,7 +19,7 @@ export type Step = { model?:string; backend?:'api'|'codex'; id: string; row: str
 export type RunOptions = { agentModel?:string; mode: 'api'|'agent'; agentBackend?:'api'|'codex'; concurrency: number; timeout: number; maxSteps: number; maxRetries: number; totalTimeout: number; dependencyDelayMs?: number; autoRetry?: boolean; apiMaxRetries?: number; retryDelayMs?: number; streaming?: boolean };
 export const labels: Record<Status,string> = {idle:'待运行',queued:'排队',running:'生成中',done:'完成',error:'失败',cancelled:'已取消',stale:'需要更新'};
 export const emptyCell = (value = '', status: Status = 'idle'): Cell => ({value,status,revision:0});
-export const newColumn = (id: string, name: string, sources: string[]): Column => ({id,name,sources,prompt:'',userPrompt:'{{text}}',model:'gpt-6-luna',maxTokens:1024,reasoning:'none',check:false,minLength:1,containsSource:false,ttsLanguage:'off'});
+export const newColumn = (id: string, name: string, sources: string[]): Column => ({id,name,sources,prompt:'',userPrompt:'{{text}}',model:'gpt-6-luna',maxTokens:1024,reasoning:'none',check:false,minLength:1,containsSource:false,ttsLanguage:'off',historyLimit:10});
 export const id = () => {
   const cryptoApi=globalThis.crypto;
   if(typeof cryptoApi.randomUUID==='function')return cryptoApi.randomUUID();

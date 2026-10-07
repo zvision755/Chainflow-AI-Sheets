@@ -37,6 +37,18 @@ test('TTS origin, input, key and language guards run before the upstream request
   for (const [req,status] of [[request(payload,'https://evil.example'),403],[request({...payload,input:'x'.repeat(4097)}),400],[request({...payload,voice:'af_heart'}),400],[request({...payload,secret:'hidden'}),400],[request(payload,base,{Authorization:'Bearer hidden'}),400],[request({...payload,url:'http://169.254.169.254/v1'}),400]] as const) assert.equal((await handler(req,'speech')).status,status);
   assert.equal(calls,0);
 });
+test('TTS allows private-LAN same-origin requests only when LAN access is enabled', async () => {
+  let calls = 0;
+  const fetcher = (async () => { calls++; return new Response(wav()); }) as typeof fetch;
+  const lanUrl = 'http://192.168.10.5:3003/api/local-tts/speech';
+  const lanRequest = (origin: string) => new Request(lanUrl, { method: 'POST', headers: { origin, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  assert.equal((await createLocalTtsHandler(fetcher)(lanRequest('http://192.168.10.5:3003'), 'speech')).status, 403);
+  const lanHandler = createLocalTtsHandler(fetcher, 90000, { url: 'http://kokoro:8880/v1', fetcher }, true);
+  assert.equal((await lanHandler(lanRequest('http://192.168.10.5:3003'), 'speech')).status, 200);
+  assert.equal((await lanHandler(lanRequest('https://evil.example'), 'speech')).status, 403);
+  assert.equal((await lanHandler(new Request('http://192.0.2.5:3003/api/local-tts/speech', { method: 'POST', headers: { origin: 'http://192.0.2.5:3003', 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }), 'speech')).status, 403);
+  assert.equal(calls, 1);
+});
 test('TTS sends language-specific speech once and returns uncached binary bytes', async () => {
   let destination = '', sent: any;
   const handler = createLocalTtsHandler((async (url, init) => { destination=String(url);sent=init;return new Response(wav(),{headers:{'Content-Type':'audio/wav'}}); }) as typeof fetch);

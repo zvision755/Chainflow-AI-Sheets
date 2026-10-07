@@ -18,8 +18,18 @@ test('legacy sheets default to source-only user messages and persist templates w
 test('templates use exact current sources, prior result, bounded history, UTC seconds and request ID',()=>{
   const s=example(),col=s.columns[2];col.sources=['input','explain'];s.rows[0].cells.explain=emptyCell('来源例句','done');s.rows[0].cells.teacher=emptyCell('原解读','done');
   const context=promptContext(s,'row-1',col,['先前结果'],new Date('2026-10-06T01:02:03.456Z'),'test-id');
-  assert.equal(context.text,'[日语单词]\nフレーム\n\n[日语释义]\n来源例句');assert.equal(context.existing_result,'原解读');assert.deepEqual(JSON.parse(context.recent_results),['先前结果','原解读']);assert.equal(context.timestamp,'2026-10-06T01:02:03Z');assert.equal(context.request_id,'test-id');assert.equal(context.row_number,'1');assert.equal(context.column_name,col.name);
+  assert.equal(context.text,'[日语单词]\nフレーム\n\n[日语释义]\n来源例句');assert.equal(context.existing_result,'1. 先前结果\n\n2. 原解读');assert.deepEqual(JSON.parse(context.recent_results),['先前结果','原解读']);assert.equal(context.timestamp,'2026-10-06T01:02:03Z');assert.equal(context.request_id,'test-id');assert.equal(context.row_number,'1');assert.equal(context.column_name,col.name);
   assert.ok(promptContext(s,'row-1',col,Array.from({length:5},(_,i)=> '"'.repeat(32000)+i)).recent_results.length<=10000);
+});
+test('request IDs work in browsers without crypto.randomUUID',()=>{
+  const previous=Object.getOwnPropertyDescriptor(globalThis,'crypto');
+  Object.defineProperty(globalThis,'crypto',{configurable:true,value:{getRandomValues(bytes:Uint8Array){bytes.fill(7);return bytes;}}});
+  try {
+    const s=example(),context=promptContext(s,'row-1',s.columns[1]);
+    assert.match(context.request_id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  } finally {
+    if(previous)Object.defineProperty(globalThis,'crypto',previous);else delete (globalThis as {crypto?:Crypto}).crypto;
+  }
 });
 test('template replacement is single-pass literal text, catches unknown names and expanded size',()=>{
   const s=example(),col=s.columns[1];s.rows[0].cells.input.value='{{timestamp}} $& <script>数据</script>';
@@ -33,7 +43,7 @@ test('API and local Agent receive separate expanded system/user messages with ra
   for(const mode of ['api','agent'] as const){const s=example(),col=s.columns[1];col.prompt='生成例句：{{column_name}}';col.userPrompt='时间 {{timestamp}}\n单词 {{text}}\n避开 {{existing_result}}\n历史 {{recent_results}}';s.rows[0].cells.explain=emptyCell('旧结果','done');
     const sent:GenerateInput[]=[];const e=new Scheduler(s,async payload=>{sent.push(payload);return {text:'フレームを選びました。',usage:{input:1,output:2}};});
     e.run(e.targets('cell','row-1','explain'),{...options,mode,agentBackend:mode==='agent'?'codex':undefined},true);await finish(e);
-    assert.equal(sent.length,1);assert.equal(sent[0].prompt,'生成例句：日语释义');assert.match(sent[0].input,/单词 フレーム\n避开 旧结果/);assert.ok(!sent[0].input.includes('{{'));assert.equal(e.sheet.rows[0].cells.explain.status,'done');assert.equal(e.running,0);
+    assert.equal(sent.length,1);assert.equal(sent[0].prompt,'生成例句：日语释义');assert.match(sent[0].input,/单词 フレーム\n避开 1\. 旧结果/);assert.ok(!sent[0].input.includes('{{'));assert.equal(e.sheet.rows[0].cells.explain.status,'done');assert.equal(e.running,0);
     assert.equal(col.userPrompt,'时间 {{timestamp}}\n单词 {{text}}\n避开 {{existing_result}}\n历史 {{recent_results}}');
   }
 });
@@ -51,7 +61,7 @@ test('invalid or empty user templates cannot overwrite a valid saved column',()=
   assert.throws(()=>e.configure({...original,userPrompt:'{{not_supported}}'}),/未知模板/);
   assert.deepEqual(s.columns[1],original);
 });
-test('history remains at five results and is only sent through explicit templates',()=>{
+test('recent-results uses five records while existing-result uses the configured full history',()=>{
   const s=example(),col=s.columns[1];col.freshResults=true;col.userPrompt='来源：{{text}}\n本次时间：{{timestamp}}';s.rows[0].cells.explain.value='当前结果';
   const history=Array.from({length:100},(_,i)=>`旧结果-${i}`),ctx=promptContext(s,'row-1',col,history,new Date('2026-10-06T01:02:03Z'),'id');
   assert.deepEqual(JSON.parse(ctx.recent_results),['旧结果-96','旧结果-97','旧结果-98','旧结果-99','当前结果']);

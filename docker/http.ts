@@ -22,7 +22,7 @@ export function hostTtsFetch(fetcher:typeof fetch=fetch):typeof fetch {
 }
 export function createDockerHandler(options:{bridge?:Pick<CodexBridge,'status'|'generate'>;fetcher?:typeof fetch;ttsFetcher?:typeof fetch;builtinTtsFetcher?:typeof fetch;runtime?:'docker'|'macos';builtinTtsUrl?:string;builtinTts?:boolean;ttsRuntime?:TtsRuntime;login?:()=>Promise<{authUrl:string}>;logout?:()=>Promise<void>;allowLan?:boolean}={}) {
   const runtime=options.runtime??'docker';
-  const tts=createLocalTtsHandler((input,init)=>['127.0.0.1','localhost','[::1]'].includes(new URL(String(input)).hostname) ? (options.ttsFetcher??hostTtsFetch())(input,init) : (options.fetcher??fetch)(input,init),90000,{url:options.builtinTtsUrl??'http://kokoro:8880/v1',fetcher:options.builtinTtsFetcher??fetch});
+  const tts=createLocalTtsHandler((input,init)=>['127.0.0.1','localhost','[::1]'].includes(new URL(String(input)).hostname) ? (options.ttsFetcher??hostTtsFetch())(input,init) : (options.fetcher??fetch)(input,init),90000,{url:options.builtinTtsUrl??'http://kokoro:8880/v1',fetcher:options.builtinTtsFetcher??fetch},options.allowLan===true);
   return async(request:Request):Promise<Response|null>=>{
     const url=new URL(request.url);
     // LAN requests are opt-in and accepted only for RFC1918 private IPv4 addresses.
