@@ -19,6 +19,10 @@ COPY next.config.ts postcss.config.mjs tsconfig.json ./
 RUN npm run build:docker && npm prune --omit=dev --no-audit --no-fund
 
 FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS runtime
+# Codex uses the system trust store for HTTPS authentication and inference.
+RUN apt-get -o Acquire::http::Proxy="$HTTP_PROXY" update \
+    && apt-get -o Acquire::http::Proxy="$HTTP_PROXY" install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production PORT=8080 NEXT_TELEMETRY_DISABLED=1 \
     CODEX_HOME=/data/codex CHAINFLOW_CODEX_BIN=/app/node_modules/.bin/codex
