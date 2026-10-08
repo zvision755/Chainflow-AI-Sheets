@@ -7,6 +7,7 @@ RUN --mount=type=cache,target=/root/.npm \
     npm ci --no-audit --no-fund --fetch-retries=4 --fetch-retry-maxtimeout=30000
 COPY app ./app
 COPY components ./components
+COPY hooks ./hooks
 COPY core ./core
 COPY model ./model
 COPY modes ./modes

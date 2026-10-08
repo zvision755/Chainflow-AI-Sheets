@@ -7,7 +7,7 @@ import { repeatedResult } from './fresh-results';
 import { buildPrompts, promptContext, validatePromptTemplates } from './prompt-templates';
 import { appendResult, cellHistory, historyLimit, MAX_HISTORY_LIMIT, selectedHistoryIndex } from './result-history';
 type Task={row:string;column:string;revision:number;attempt:number;retryAt:number;options:RunOptions;batch:Batch;avoidResults?:string[];duplicateRetries?:number;variantUsage?:{input:number;output:number}};
-type Batch={steps:number;deadline:number;timer:ReturnType<typeof setTimeout>|null;columnCompletedAt:Map<string,number>};
+type Batch={steps:number;deadline:number;timer:ReturnType<typeof setTimeout>|null;columnCompletedAt:Map<string,number>;protectedSources:Map<string,Set<string>>};
 export class Scheduler {
   sheet:Sheet;steps:Step[]=[];
   private queue=new Map<string,Task>();private active=new Map<string,{task:Task;controller:AbortController}>();
@@ -24,8 +24,10 @@ export class Scheduler {
   private cell(row:string,col:string){return this.sheet.rows.find(r=>r.id===row)?.cells[col];}
   targets(scope:'all'|'row'|'column'|'cell',row?:string,col?:string){return this.sheet.rows.filter(r=>!row||r.id===row).flatMap(r=>this.sheet.columns.slice(1).filter(c=>!col||c.id===col).map(c=>({row:r.id,column:c.id})));}
   estimate(targets:{row:string;column:string}[],force=false){return plan(this.sheet,targets,force).length;}
-  run(targets:{row:string;column:string}[],options:RunOptions,force=false){
-    const todo=plan(this.sheet,targets,force);const batch:Batch={steps:0,deadline:Date.now()+options.totalTimeout,timer:null,columnCompletedAt:new Map()};
+  run(targets:{row:string;column:string}[],options:RunOptions,force=false,preserveCompleted:{row:string;column:string}[]=[]){
+    const protectedSources=new Map<string,Set<string>>();
+    for(const source of preserveCompleted){const cell=this.cell(source.row,source.column);if(cell?.status==='done'&&cell.value.trim()){if(!protectedSources.has(source.row))protectedSources.set(source.row,new Set());protectedSources.get(source.row)!.add(source.column);}}
+    const todo=plan(this.sheet,targets,force);const batch:Batch={steps:0,deadline:Date.now()+options.totalTimeout,timer:null,columnCompletedAt:new Map(),protectedSources};
     const limit={...options,autoRetry:options.autoRetry!==false,apiMaxRetries:Math.max(0,Math.min(3,options.apiMaxRetries??2)),retryDelayMs:Math.max(10,Math.min(30000,options.retryDelayMs??2000)),dependencyDelayMs:Math.max(0,Math.min(60000,options.dependencyDelayMs??500)),concurrency:Math.max(1,Math.min(3,options.concurrency)),maxRetries:Math.max(0,Math.min(2,options.maxRetries)),maxSteps:Math.max(1,Math.min(3000,options.maxSteps)),timeout:Math.max(1000,Math.min(120000,options.timeout))};
     for(const t of todo){const key=this.key(t.row,t.column);if(this.queue.has(key)||this.active.has(key))continue;
       const cell=this.cell(t.row,t.column)!,column=this.sheet.columns.find(c=>c.id===t.column)!;
@@ -63,7 +65,12 @@ export class Scheduler {
   addColumn(column:Column){const columns=[...this.sheet.columns,column];topological(columns);this.sheet.columns=columns;this.sheet.rows.forEach(r=>r.cells[column.id]=emptyCell());this.emit();}
   removeColumn(col:string){if(col===this.sheet.columns[0].id)throw new Error('输入列不能删除');if(this.sheet.columns.some(c=>c.sources.includes(col)))throw new Error('其他列仍依赖此列，请先修改它们的来源');this.sheet.rows.forEach(r=>{this.invalidate(r.id,new Set([col]));delete r.cells[col];});this.sheet.columns=this.sheet.columns.filter(c=>c.id!==col);this.emit();}
   moveColumn(col:string,delta:number){const cols=[...this.sheet.columns],i=cols.findIndex(c=>c.id===col),j=i+delta;if(i<1||j<1||j>=cols.length)return;[cols[i],cols[j]]=[cols[j],cols[i]];this.sheet.columns=cols;this.emit();}
-  addRow(copy?:string){const source=this.sheet.rows.find(r=>r.id===copy);this.sheet.rows.push({id:id(),height:source?.height,cells:Object.fromEntries(this.sheet.columns.map((c,i)=>[c.id,emptyCell(source?.cells[c.id].value??'',i===0?'done':source?.cells[c.id].value?'stale':'idle')]))});this.emit();}
+  addRow(copy?:string,values:Record<string,string>={}){
+    if(this.sheet.rows.length>=500)throw Error('表格最多容纳 500 行');
+    if(Object.keys(values).some(key=>!this.sheet.columns.some(column=>column.id===key))||Object.values(values).some(value=>value.length>32000))throw Error('请检查录入列及内容长度');
+    const source=this.sheet.rows.find(r=>r.id===copy),rowId=id();
+    this.sheet.rows.push({id:rowId,height:source?.height,cells:Object.fromEntries(this.sheet.columns.map((c,i)=>{const value=values[c.id]??source?.cells[c.id].value??'';return [c.id,emptyCell(value,i===0||values[c.id]?.trim()?'done':source?.cells[c.id].value?'stale':'idle')];}))});this.emit();return rowId;
+  }
   moveRow(rowId:string,delta:number){if(!Number.isInteger(delta)||Math.abs(delta)!==1)return;const from=this.sheet.rows.findIndex(row=>row.id===rowId),to=from+delta;if(from<0||to<0||to>=this.sheet.rows.length)return;[this.sheet.rows[from],this.sheet.rows[to]]=[this.sheet.rows[to],this.sheet.rows[from]];this.emit();}
   setRowHeight(rowId:string,height:number|null){const row=this.sheet.rows.find(item=>item.id===rowId);if(!row||row.height===height)return;if(height===null)delete row.height;else row.height=height;this.emit();}
   removeRow(row:string){this.invalidate(row,new Set(this.sheet.columns.map(c=>c.id)));this.sheet.rows=this.sheet.rows.filter(r=>r.id!==row);this.emit();this.pump();}
@@ -120,7 +127,7 @@ export class Scheduler {
       if(task.avoidResults){task.variantUsage={input:(task.variantUsage?.input??0)+result.usage.input,output:(task.variantUsage?.output??0)+result.usage.output};if(repeatedResult(result.text,task.avoidResults))throw new ModelError('模型仍返回与已有结果相同的例句；原结果已保留', 'repeated_output', true);}
       const cell=this.cell(task.row,task.column);
       if(cell&&cell.revision===task.revision&&!controller.signal.aborted){
-        if(cell.value!==result.text){const affected=descendants(this.sheet.columns,task.column);for(const d of affected){const downstream=this.cell(task.row,d);if(downstream&&downstream.status!=='queued')this.invalidate(task.row,new Set([d]));}}
+        if(cell.value!==result.text){const affected=descendants(this.sheet.columns,task.column,task.batch.protectedSources.get(task.row));for(const d of affected){const downstream=this.cell(task.row,d);if(downstream&&downstream.status!=='queued')this.invalidate(task.row,new Set([d]));}}
         const completedAt=Date.now();task.batch.columnCompletedAt.set(col.id,completedAt);
         appendResult(cell,result.text,historyLimit(this.sheet.columns.find(c=>c.id===col.id)??col));
         Object.assign(cell,{value:result.text,status:'done',completedAt,elapsed:Date.now()-started,usage:task.variantUsage??result.usage});delete cell.error;
