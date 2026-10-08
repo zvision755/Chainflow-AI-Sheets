@@ -33,15 +33,7 @@ npm run dev -- --host 127.0.0.1 --port 3002
 
 换 Wi-Fi 不影响 `127.0.0.1` 或 `localhost`，两者都指向本机。不过浏览器将它们视为不同站点，各自保存表格、凭证和 TTS 配置；日常保持使用 `http://127.0.0.1:3002`，避免切换地址后看到另一份浏览器数据。
 
-需要在退出 Codex 后继续预览时，在项目目录执行 `npm run preview:background`，它启动独立后台进程，日志在忽略的 `outputs/preview.log`；已有本应用预览时不会重复启动。后台进程仅本地开发使用，Mac 重启后需重新启动。
-
-### 用 LaunchManager 管理 Mac 服务
-
-在已安装依赖的项目目录运行 `npm run service:configure`，生成用户启动项 `ai.chainflow.sheets`。先停止已有开发服务器，再打开 LaunchManager → Launch Agents → User，搜索 `ai.chainflow.sheets`，点击 **Load** 加载。此后点击 **Stop** 停止、**Start** 启动。登录 Mac 后自动启动，访问地址仍为 http://127.0.0.1:3002；退出 LaunchManager 或 Codex 不会停止已托管的服务。KeepAlive 关闭，手动停止后不会立即重新启动；下次登录仍自动启动。如不希望登录时自动运行，在 Edit 中关闭 RunAtLoad 并保存。
-
-启动项位于 `~/Library/LaunchAgents/ai.chainflow.sheets.plist`。它直接运行前台 Node 进程和本项目 `scripts/run-framework.mjs`，使用项目内依赖，仅监听 `127.0.0.1:3002`。不要在 LaunchManager 中填写 `npm run preview:background`，该命令会脱离托管进程；完成托管后日常使用 LaunchManager 的按钮，无需再运行后台预览命令。项目移动后，在新目录运行 `npm run service:configure` 重新生成配置，然后在 LaunchManager 重新加载。
-
-日志在忽略的 `outputs/launchd.stdout.log`、`outputs/launchd.stderr.log`，可展开启动项查看。配置只设置 PATH，没有密钥或 Codex 登录数据。Agent 模式继续通过本机 Codex 自己管理的登录运行。此启动项只用于 Mac 本地，不属于 Sites 部署。
+退出 Codex 后若仍需运行 **本机开发预览**，可在项目目录执行 `npm run preview:background`。该命令只适用于 Node 开发服务器（3002），Mac 重启后需重新启动；LaunchManager 启动项也是可选的本机开发方式。Docker 部署请直接用 OrbStack 或 Docker Desktop 管理 `chainflow` 项目，无需 LaunchManager。
 
 Mac 开发环境自动读取系统 HTTPS 代理，只支持回环地址代理。可显式覆盖：
 
