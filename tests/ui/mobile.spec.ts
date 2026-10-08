@@ -18,7 +18,8 @@ async function open(page: Page, sheet = fixture()) {
   await expect(page.locator('.app-shell')).toHaveAttribute('data-view', 'mobile');
 }
 async function connect(page: Page) {
-  await page.getByRole('button', { name: '连接 API key', exact: true }).click();
+  await page.getByLabel('查看连接状态', { exact: true }).click();
+  await page.getByRole('button', { name: '查看连接设置', exact: true }).click();
   await page.getByLabel('API key', { exact: true }).fill('sk-simulated-mobile-test-key');
   await page.getByRole('button', { name: '完成', exact: true }).click();
 }
@@ -26,14 +27,15 @@ async function view(page: Page, label: string) {
   await page.getByLabel('应用菜单', { exact: true }).click();
   await page.getByRole('menuitemradio', { name: label, exact: true }).click();
 }
-test('four-line overview opens every column, highlights clicked C, copies full long text, and navigates rows', async ({ page }) => {
+test('two-line overview opens every column, highlights clicked C, copies full long text, and navigates rows', async ({ page }) => {
   const sheet = fixture(), full = '长文本解读，保留全部内容。\n'.repeat(300);
   sheet.rows[0].cells.c = emptyCell(full, 'done'); sheet.rows[0].height = 800;
   await open(page, sheet);
   await expect(page.locator('.row-resize-handle')).toHaveCount(0);
   const preview = page.getByRole('button', { name: '查看第 1 行 解读', exact: true }).locator('.mobile-cell-preview');
   expect((await preview.innerText()).length).toBeLessThanOrEqual(601);
-  expect(await preview.evaluate(node => getComputedStyle(node).webkitLineClamp)).toBe('4');
+  expect(await preview.evaluate(node => getComputedStyle(node).webkitLineClamp)).toBe('2');
+  expect(await preview.evaluate(node => node.closest('tr')!.getBoundingClientRect().height)).toBeLessThanOrEqual(76);
   expect(await preview.evaluate(node => getComputedStyle(node).overflow)).toBe('hidden');
   await page.getByRole('button', { name: '查看第 1 行 解读', exact: true }).click();
   const detail = page.locator('.row-detail-sheet');
@@ -63,28 +65,29 @@ test('new row starts from B, keeps sheet open and receives actual dependency out
   await expect(page.locator('[data-column-id="b"] .row-card-text')).toHaveText('念のため、もう一度確認します。');
   expect(calls).toHaveLength(2); expect(calls[1].input).toBe(calls[0].input + ' → 输出');
   await page.getByRole('button', { name: '关闭行详情' }).click();
-  await expect(page.getByTestId('running-count')).toContainText('正在生成 0 个');
+  await expect(page.getByTestId('running-count')).toBeEmpty();
   await expect(page.locator('.mobile-table tbody tr')).toHaveCount(1);
   await expect(page.getByRole('button', { name: '查看第 1 行 原始内容', exact: true })).toContainText('点击填写内容');
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('chainflow-workspace-v1')!).tables[0].sheet.rows.length)).toBe(1);
 });
-test('continuous three entries retain preferred B, never cross-write rows, and run-and-close finishes in background', async ({ page }) => {
+test('continuous entry saves on next without running, retains preferred B, and closes with a saved draft', async ({ page }) => {
   const calls: any[] = [];
-  await page.route('**/api/generate', async route => { const body = route.request().postDataJSON(); calls.push(body); await new Promise(done => setTimeout(done, 250)); await route.fulfill({ json: { text: body.input + '结果', usage: { input: 1, output: 1 } } }); });
-  await open(page, fixture(0)); await connect(page); await page.getByRole('button', { name: '新增一行', exact: true }).click();
+  await page.route('**/api/generate', async route => { calls.push(route.request().postDataJSON()); await route.fulfill({ json: { text: '不应生成' } }); });
+  await open(page, fixture(0)); await page.getByRole('button', { name: '新增一行', exact: true }).click();
   for (const value of ['第一句', '第二句', '第三句']) {
     await page.getByLabel('填写 整理', { exact: true }).fill(value);
-    await page.getByRole('button', { name: '运行并新增', exact: true }).click();
-    await expect(page.getByRole('heading', { name: '新增记录', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '下一行', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '新建行', exact: true })).toBeVisible();
     await expect(page.getByLabel('填写 整理', { exact: true })).toHaveValue('');
     await expect(page.getByLabel('填写 整理', { exact: true })).toBeFocused();
   }
+  await page.getByRole('button', { name: '下一行', exact: true }).click();
+  await expect(page.locator('.mobile-table tbody tr')).toHaveCount(3);
   await page.getByLabel('填写 整理', { exact: true }).fill('第四句');
-  await page.getByRole('button', { name: '运行并关闭', exact: true }).click();
+  await page.getByRole('button', { name: '关闭行详情', exact: true }).click();
   await expect(page.locator('.row-detail-sheet')).toHaveCount(0);
-  await expect(page.getByTestId('running-count')).toContainText('正在生成 0 个', { timeout: 10000 });
-  await expect.poll(() => calls.length).toBe(8);
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('chainflow-workspace-v1')!).tables[0].sheet.rows.map((row: any) => row.cells.d.value))).toEqual(['第一句结果结果', '第二句结果结果', '第三句结果结果', '第四句结果结果']);
+  expect(calls).toHaveLength(0);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('chainflow-workspace-v1')!).tables[0].sheet.rows.map((row: any) => row.cells.b.value))).toEqual(['第一句', '第二句', '第三句', '第四句']);
   const ids = await page.locator('.mobile-table tbody tr').evaluateAll(rows => rows.map(row => row.getAttribute('data-row-id')));
   expect(new Set(ids).size).toBe(4);
 });
@@ -112,9 +115,10 @@ test('history and autosaved editing reuse downstream invalidation; dirty new ent
   sheet.rows[0].cells.c = emptyCell('旧解读', 'done');
   await open(page, sheet);
   await page.getByRole('button', { name: '查看第 1 行 整理', exact: true }).click();
+  await page.getByLabel('更多 整理 操作', { exact: true }).click();
   await page.getByRole('button', { name: '上一条历史 第 1 行 整理' }).click();
   await expect(page.locator('[data-column-id="b"] .row-card-text')).toHaveText('第一版');
-  await expect(page.locator('[data-column-id="c"]')).toContainText('需要更新');
+  await expect(page.locator('[data-column-id="c"] .mobile-status-icon')).toHaveAttribute('aria-label', '需要更新');
   await page.getByRole('button', { name: '编辑 整理', exact: true }).click();
   await page.getByLabel('填写 整理', { exact: true }).fill('手动更新');
   await page.getByRole('button', { name: '关闭行详情' }).click();
@@ -122,9 +126,6 @@ test('history and autosaved editing reuse downstream invalidation; dirty new ent
   await page.getByRole('button', { name: '新增一行', exact: true }).click();
   await page.getByLabel('填写 解读', { exact: true }).fill('从 C 开始');
   await page.getByRole('button', { name: '关闭行详情' }).click();
-  await expect(page.getByRole('alert')).toContainText('尚未添加到表格');
-  await page.getByRole('button', { name: '继续编辑' }).click(); await expect(page.getByLabel('填写 解读')).toHaveValue('从 C 开始');
-  await page.getByRole('button', { name: '关闭行详情' }).click(); await page.getByRole('button', { name: '保存并关闭', exact: true }).click();
   await expect(page.locator('.mobile-table tbody tr')).toHaveCount(2);
   await expect(page.getByRole('button', { name: '查看第 2 行 解读', exact: true })).toContainText('从 C 开始');
 });
@@ -158,7 +159,7 @@ test('double submission creates one record; API error and retry settle correctly
   await expect(page.locator('[data-column-id="b"] .row-card-text')).toHaveText('手动 B');
   await page.getByRole('button', { name: '关闭行详情' }).click();
   await expect(page.locator('.mobile-table tbody tr')).toHaveCount(1); expect(calls).toBe(3);
-  await expect(page.getByTestId('running-count')).toContainText('正在生成 0 个');
+  await expect(page.getByTestId('running-count')).toBeEmpty();
 });
 test('streaming text stays live through closing the modal and switching views, without submitting another request', async ({ page }) => {
   await page.addInitScript(() => {
@@ -193,10 +194,11 @@ test('network failure and stopping an active row never leave a running counter o
   await page.unroute('**/api/generate');
   await page.route('**/api/generate', async route => { await new Promise(resolve => setTimeout(resolve, 800)); await route.fulfill({ json: { text: '应被取消的结果', usage: { input: 1, output: 1 } } }).catch(() => {}); });
   await page.getByRole('button', { name: '运行', exact: true }).click();
-  await page.getByRole('button', { name: '停止全部', exact: true }).click();
-  await expect(page.locator('[data-column-id="d"]')).toContainText('已取消');
+  await page.getByLabel('更多行操作', { exact: true }).click();
+  await page.getByRole('button', { name: '停止全部任务', exact: true }).click();
+  await expect(page.locator('[data-column-id="d"] .mobile-status-icon')).toHaveAttribute('aria-label', /已取消/);
   await page.getByRole('button', { name: '关闭行详情' }).click();
-  await expect(page.getByTestId('running-count')).toContainText('正在生成 0 个');
+  await expect(page.getByTestId('running-count')).toBeEmpty();
   await page.waitForTimeout(900);
   await expect(page.getByRole('button', { name: '查看第 1 行 解读', exact: true })).toContainText('手动 C');
   await expect(page.getByRole('button', { name: '查看第 1 行 摘要', exact: true })).not.toContainText('应被取消的结果');
@@ -208,9 +210,9 @@ test('detail speech reuses the existing TTS request and stop control', async ({ 
   await page.route('**/api/local-tts/speech', async route => { speech = route.request().postDataJSON(); await route.fulfill({ body: Buffer.from('RIFF-test-audio'), contentType: 'audio/wav' }); });
   await open(page, sheet); await page.getByRole('button', { name: '查看第 1 行 整理', exact: true }).click();
   const speak = page.getByRole('button', { name: '朗读第 1 行 整理', exact: true });
-  await speak.click(); await expect(speak).toContainText('停止朗读');
+  await speak.click(); await expect(speak.locator('svg')).toHaveClass(/lucide-square/);
   expect(speech.input).toBe('念のため、もう一度確認します。'); expect(speech.language).toBe('ja');
-  await speak.click(); await expect(speak).toHaveText('朗读');
+  await speak.click(); await expect(speak.locator('svg')).toHaveClass(/lucide-volume-2/);
 });
 
 test('missing sources are explained inside details while retaining a saved arbitrary-column entry', async ({ page }) => {
@@ -222,9 +224,74 @@ test('missing sources are explained inside details while retaining a saved arbit
   await page.getByRole('button', { name: '新增一行', exact: true }).click();
   await page.getByLabel('填写 整理', { exact: true }).fill('只填写 B，A 保持空白');
   await page.getByRole('button', { name: '运行', exact: true }).click();
-  await expect(page.locator('.row-detail-sheet [role="status"]')).toContainText('缺少可用来源');
+  await expect(page.locator('.row-detail-sheet [role="alert"]')).toContainText('缺少可用来源');
   await expect(page.locator('[data-column-id="b"] .row-card-text')).toHaveText('只填写 B，A 保持空白');
   expect(calls).toBe(0);
   await page.getByRole('button', { name: '关闭行详情', exact: true }).click();
+  await expect(page.locator('.mobile-table tbody tr')).toHaveCount(1);
+});
+
+test('portrait layout keeps navigation, title, headers, rows and short detail cards compact', async ({ page }) => {
+  await open(page, fixture(8));
+  const layout = await page.evaluate(() => {
+    const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+    return { viewport: innerHeight, header: box('.mobile-view .header').height, firstRowTop: box('.mobile-table tbody tr').top,
+      rowHeight: box('.mobile-table tbody tr').height, columnHeight: box('.mobile-table th').height };
+  });
+  expect(layout.header).toBeLessThanOrEqual(74);
+  expect(layout.firstRowTop / layout.viewport).toBeLessThan(0.35);
+  expect(layout.columnHeight).toBeLessThanOrEqual(50);
+  expect(layout.rowHeight).toBeLessThanOrEqual(76);
+  await expect(page.locator('.mobile-table th').nth(2)).not.toContainText('来源');
+  await expect(page.locator('.mobile-table th').nth(2)).not.toContainText('模型');
+  await page.getByLabel('设置 整理', { exact: true }).click();
+  await expect(page.getByRole('button', { name: '运行列 整理', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '列设置', exact: true }).click();
+  await expect(page.getByRole('group', { name: '来源列' })).toBeVisible();
+  await expect(page.getByLabel('模型名称', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '关闭列配置' }).click();
+  await page.getByRole('button', { name: '查看第 1 行 原始内容', exact: true }).click();
+  expect(await page.locator('[data-column-id="a"]').evaluate(node => node.getBoundingClientRect().height)).toBeLessThan(130);
+  await page.locator('[data-column-id="a"] .mobile-status-details summary').click();
+  await expect(page.locator('[data-column-id="a"] .mobile-status-popover')).toHaveText('完成');
+  await expect(page.locator('.row-detail-footer button')).toHaveCount(1);
+  await expect(page.locator('.row-detail-footer button')).toHaveText('运行');
+});
+
+test('last row navigates to an empty draft; blank close adds nothing and filled close saves', async ({ page }) => {
+  await open(page, fixture(1));
+  await page.getByRole('button', { name: '查看第 1 行 原始内容', exact: true }).click();
+  await page.getByRole('button', { name: '下一行', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '新建行' })).toBeVisible();
+  await page.getByRole('button', { name: '关闭行详情' }).click();
+  await expect(page.locator('.mobile-table tbody tr')).toHaveCount(1);
+  await page.getByRole('button', { name: '新增一行', exact: true }).click();
+  await page.getByLabel('填写 解读', { exact: true }).fill('从 C 列输入');
+  await page.getByRole('button', { name: '新增行', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '新建行' })).toBeVisible();
+  await expect(page.getByLabel('填写 解读', { exact: true })).toHaveValue('');
+  await page.getByRole('button', { name: '关闭行详情' }).click();
+  await expect(page.locator('.mobile-table tbody tr')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: '查看第 2 行 解读', exact: true })).toContainText('从 C 列输入');
+});
+
+test('failed draft persistence keeps the draft visible and retry saves one row', async ({ page }) => {
+  await open(page, fixture(0));
+  await page.getByRole('button', { name: '新增一行', exact: true }).click();
+  await page.getByLabel('填写 整理', { exact: true }).fill('必须保留的草稿');
+  await page.evaluate(() => {
+    (window as any).__originalSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (key === 'chainflow-workspace-v1') throw new DOMException('磁盘空间不足', 'QuotaExceededError');
+      return (window as any).__originalSetItem.call(this, key, value);
+    };
+  });
+  await page.getByRole('button', { name: '关闭行详情' }).click();
+  await expect(page.getByRole('alert')).toContainText('保存失败');
+  await expect(page.getByLabel('填写 整理', { exact: true })).toHaveValue('必须保留的草稿');
+  await expect(page.locator('.mobile-table tbody tr')).toHaveCount(0);
+  await page.evaluate(() => { Storage.prototype.setItem = (window as any).__originalSetItem; });
+  await page.getByRole('button', { name: '关闭行详情' }).click();
+  await expect(page.locator('.row-detail-sheet')).toHaveCount(0);
   await expect(page.locator('.mobile-table tbody tr')).toHaveCount(1);
 });
