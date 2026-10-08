@@ -100,7 +100,7 @@ test('interrupted partial output retries cleanly and only successful final text 
   let calls=0;const s=example(),e=new Scheduler(s,async(_p,_s,c)=>{calls++;c?.onText?.(calls===1?'失败的候选':'成功的候选');if(calls===1)throw new ModelError('连接中断','stream_interrupted',true);return ok('最终フレーム结果');});
   e.run(e.targets('cell','row-1','explain'),options);await finish(e);assert.equal(calls,2);assert.equal(s.rows[0].cells.explain.value,'最终フレーム结果');assert.equal(s.rows[0].cells.explain.preview,undefined);assert.equal(s.rows[0].cells.explain.status,'done');
 });
-test('Agent semantic checker streams internally but never displays its JSON as the cell candidate',async()=>{
-  const s=example();s.columns[1].check=true;let calls=0;const e=new Scheduler(s,async(p,_s,c)=>{calls++;if(p.prompt.startsWith('检查')){assert.equal(c?.onText,undefined);return ok('{"pass":true}');}c?.onText?.('フレーム候选');return ok('フレーム最终结果');});
-  e.run(e.targets('cell','row-1','explain'),{...options,mode:'agent'},true);await finish(e);assert.equal(calls,2);assert.equal(s.rows[0].cells.explain.value,'フレーム最终结果');
+test('Agent streams the result without running legacy semantic checks',async()=>{
+  const s=example();s.columns[1].check=true;let calls=0;const e=new Scheduler(s,async(_p,_s,c)=>{calls++;c?.onText?.('フレーム候选');return ok('フレーム最终结果');});
+  e.run(e.targets('cell','row-1','explain'),{...options,mode:'agent'},true);await finish(e);assert.equal(calls,1);assert.equal(s.rows[0].cells.explain.value,'フレーム最终结果');
 });

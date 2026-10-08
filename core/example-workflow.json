@@ -32,7 +32,7 @@
       "reasoning": "none",
       "check": false,
       "minLength": 1,
-      "containsSource": true,
+      "containsSource": false,
       "ttsLanguage": "ja",
       "width": 260,
       "freshResults": true,

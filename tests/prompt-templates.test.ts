@@ -68,8 +68,8 @@ test('recent-results uses five records while existing-result uses the configured
   const lean=buildPrompts(col,ctx);assert.equal(lean.prompt,col.prompt);assert.equal(lean.input,'来源：フレーム\n本次时间：2026-10-06T01:02:03Z');
   col.userPrompt='{{text}}\n{{existing_result}}\n{{recent_results}}';const explicit=buildPrompts(col,ctx);assert.equal(explicit.prompt,col.prompt);assert.ok(explicit.input.includes('旧结果-99'));assert.ok(!explicit.prompt.includes('旧结果'));
 });
-test('Agent correction keeps system instructions exact and places correction feedback in its user message',async()=>{
-  const s=example(),sent:GenerateInput[]=[],e=new Scheduler(s,async p=>{sent.push(p);return {text:sent.length===1?'没有来源词':'フレームの例句',usage:{input:1,output:2}};});
+test('Agent keeps system instructions exact and accepts output without source text',async()=>{
+  const s=example(),sent:GenerateInput[]=[],e=new Scheduler(s,async p=>{sent.push(p);return {text:'没有来源词',usage:{input:1,output:2}};});
   e.run(e.targets('cell','row-1','explain'),{...options,mode:'agent',autoRetry:true,maxRetries:1},true);await finish(e);
-  assert.equal(sent.length,2);assert.ok(sent.every(p=>p.prompt===s.columns[1].prompt));assert.equal(sent[0].input,'フレーム');assert.match(sent[1].input,/请修正上次结果的问题/);assert.equal(s.rows[0].cells.explain.status,'done');
+  assert.equal(sent.length,1);assert.equal(sent[0].prompt,s.columns[1].prompt);assert.equal(sent[0].input,'フレーム');assert.equal(s.rows[0].cells.explain.value,'没有来源词');assert.equal(s.rows[0].cells.explain.status,'done');
 });
