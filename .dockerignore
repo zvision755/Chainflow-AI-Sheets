@@ -11,6 +11,8 @@
 !app/**
 !components/
 !components/**
+!hooks/
+!hooks/**
 !core/
 !core/**
 !model/

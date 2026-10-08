@@ -21,7 +21,7 @@ export async function synthesizeSpeech(text: string, language: SpokenLanguage, c
   return new Blob(chunks, { type: contentType });
 }
 type AudioHandle = Pick<HTMLAudioElement, 'src' | 'play' | 'pause' | 'load' | 'onended' | 'onerror'> & { removeAttribute(name: string): void };
-type SpeechState = { key?: string; phase: 'idle' | 'loading' | 'playing' | 'ready' | 'error'; message?: string };
+export type SpeechState = { key?: string; phase: 'idle' | 'loading' | 'playing' | 'ready' | 'error'; message?: string };
 type Dependencies = { synthesize: typeof synthesizeSpeech; audio: () => AudioHandle; createUrl: (blob: Blob) => string; revokeUrl: (url: string) => void; timeout: number };
 export class SpeechPlayer {
   private state: SpeechState = { phase: 'idle' };

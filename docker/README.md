@@ -29,6 +29,22 @@ docker compose down
 
 默认只允许本机访问。若要从可信局域网的其他设备访问，在根目录 `.env` 中设置 `CHAINFLOW_BIND_ADDRESS=0.0.0.0` 与 `CHAINFLOW_LAN_ACCESS=true`，然后执行 `docker compose up -d`。启用后仅接受 loopback 或 RFC1918 私有 IPv4 Host，并继续校验 API/Agent 请求的同源 Origin；OrbStack 的「Expose ports to LAN」需要开启。页面没有用户登录或多用户隔离，LAN 中可访问者能使用此容器已登录的 Codex Agent 额度；只在可信网络中启用，不用于访客 Wi-Fi 或公网。关闭时删去这两项或设回默认值，再执行 `docker compose up -d`。
 
+### 手机视图测试
+
+源码新增 Mobile View 后，需重新构建 app 镜像，单纯重启旧容器不会更新页面。在 Windows PowerShell 中进入项目目录，先导出工作簿 JSON，再执行：
+
+```powershell
+git pull --ff-only origin main
+docker compose up -d --build app
+docker compose ps
+```
+
+保留原 `.env` 和数据卷。只更新 app，不会主动启动已停用的 Kokoro 服务。沿用上述局域网设置，在 Windows 防火墙允许可信专用网络访问 TCP 3003，通过 `ipconfig` 查看当前 Wi-Fi／以太网 IPv4；手机连接同一局域网后访问 `http://该IPv4:3003`。页面按宽度自动选择手机视图，也可在「菜单」中手动切换。
+
+手机右下角 + 支持任意列输入、运行后留在详情、连续新增或提交后关闭；点击已有格子可查看整行。详情关闭不影响后台任务。完整说明见 [Mobile View](../docs/mobile-view.md)。测试范围包括 150 项核心／服务端测试及 26 项浏览器测试；真机触屏、键盘和音频播放仍需实测。
+
+工作簿仍保存在访问设备的浏览器内。可从 Mac 导出 JSON，通过 iCloud／rclone 将文件传到 Windows，再在需要的浏览器中导入；没有要求部署跨设备同步服务。JSON 不含模型连接凭证。
+
 ## API 模式与表格迁移
 
 API 模式仍使用页面填写的访客密钥、受控官方/自定义地址转发，以及原有调度、流式、有限重试和导入导出。连接设置另有独立的「本地大语言模型」入口，支持宿主机 LM Studio（1234）和 Ollama（11434）的 OpenAI 兼容接口，可不填 key；Docker 仅把这两个本机端口映射至宿主机，不允许任意内网 URL。若启用局域网访问，局域网中任何能访问 ChainFlow 的人都可能调用宿主机上的本地模型；应用没有用户登录隔离，仅在可信网络开放。容器没有站点所有者 API key、密钥环境变量或后备凭证。请求失败不会自动切换 Codex。API 与公开 Sites 模式保持独立。

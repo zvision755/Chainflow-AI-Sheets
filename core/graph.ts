@@ -11,9 +11,9 @@ export function topological(columns: Column[]): string[] {
   }
   columns.forEach(c=>visit(c.id));return order;
 }
-export function descendants(columns: Column[], source:string): Set<string> {
+export function descendants(columns: Column[], source:string, boundaries:ReadonlySet<string>=new Set()): Set<string> {
   const result=new Set<string>();
-  function visit(id:string){for(const c of columns)if(c.sources.includes(id)&&!result.has(c.id)){result.add(c.id);visit(c.id);}}
+  function visit(id:string){for(const c of columns)if(c.sources.includes(id)&&!result.has(c.id)&&!boundaries.has(c.id)){result.add(c.id);visit(c.id);}}
   visit(source);return result;
 }
 export function plan(sheet:Sheet, targets:{row:string;column:string}[],force=false) {
