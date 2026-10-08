@@ -31,7 +31,7 @@ export const id = () => {
 };
 export function example(): Sheet {
   const input = newColumn('input','日语单词',[]);
-  const explain = {...newColumn('explain','日语释义',['input']),prompt:'用日语解释这日语单词，输出必须要用到原单词',containsSource:true};
+  const explain = {...newColumn('explain','日语释义',['input']),prompt:'用日语解释这日语单词'};
   const teacher = {...newColumn('teacher','老师解读',['explain']),prompt:'作为日语老师简短解释这个句子'};
   return {version:1,name:'日语词汇学习',columns:[input,explain,teacher],rows:[{id:'row-1',cells:{input:emptyCell('フレーム','done'),explain:emptyCell(),teacher:emptyCell()}}]};
 }

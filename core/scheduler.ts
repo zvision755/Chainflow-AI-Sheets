@@ -58,7 +58,7 @@ export class Scheduler {
     const columns=this.sheet.columns.map(c=>c.id===column.id?column:c);topological(columns);
     if(column.id!==columns[0].id&&!column.sources.length)throw new Error('请至少选择一个来源列');
     if(column.id!==columns[0].id)validatePromptTemplates(column);
-    const changed=['sources','prompt','userPrompt','model','maxTokens','reasoning','check','minLength','containsSource'].some(k=>JSON.stringify(existing[k as keyof Column])!==JSON.stringify(column[k as keyof Column]));
+    const changed=['sources','prompt','userPrompt','model','maxTokens','reasoning'].some(k=>JSON.stringify(existing[k as keyof Column])!==JSON.stringify(column[k as keyof Column]));
     this.sheet.columns=columns;if(historyLimit(existing)!==historyLimit(column))for(const row of this.sheet.rows){const cell=row.cells[column.id];const values=cellHistory(cell,MAX_HISTORY_LIMIT).slice(-historyLimit(column));if(values.length&&!values.includes(cell.value)){cell.value=values.at(-1)!;this.invalidate(row.id,descendants(columns,column.id));}cell.history=values;cell.historyIndex=selectedHistoryIndex({...cell,historyIndex:undefined},values);}if(changed)this.sheet.rows.forEach(r=>this.invalidate(r.id,new Set([column.id,...descendants(columns,column.id)])));this.emit();this.pump();
   }
   invalidateGeneratedResults(){if(this.busy)throw new Error('请先停止运行再切换 Agent 模型');const generated=new Set(this.sheet.columns.slice(1).map(c=>c.id));this.sheet.rows.forEach(row=>this.invalidate(row.id,generated));this.emit();}
