@@ -3,8 +3,9 @@
 ## 未发布 — 2026-10-08
 
 - Docker 运行镜像安装系统 CA 证书包，修复容器 Codex 因缺少可信根证书而无法完成 HTTPS 登录的问题。
-- 补充设备码登录、登录 CLI 代理参数和镜像重建说明；记录用户确认的 Windows Docker Agent 实际生成测试，Mac Agent 验证仍待完成。
+- 补充设备码登录、登录 CLI 代理参数和镜像重建说明；记录 Windows Docker Agent 与 Mac OrbStack Agent 的实测结果。
 - 保留现有 Codex 登录数据卷；不包含用户凭证、API key 或本机 `.env`，不重新打包 macOS DMG。
+- Mac OrbStack 上 `gpt-6-luna` 完成「フレーム」→日语解释→中文解读的 B→C 实际生成，耗时 13.4 秒和 16.0 秒，计数归零；129 项测试、类型检查及 Docker 构建通过。详见 [Docker 验收说明](docker/README.md#验证)。
 
 ## v0.3.0-macos-beta.1 — 2026-10-07
 

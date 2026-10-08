@@ -118,6 +118,8 @@ Docker 专项模拟测试覆盖真实 Node HTTP 的增量传输、取消、依�
 
 此前的网站/Codex Linux AMD64 镜像已在 OrbStack x86 仿真下完整构建并启动，首页、健康检查、API-only 配置和 AMD64 Codex CLI 0.160.0 均通过。本次新增 Kokoro 镜像实测为 ARM64；依赖与基础镜像支持 AMD64；截至该次验证，尚未验证 AMD64 合成或 Windows 实机。后续 Windows 验证见下文。日常保留 ARM64 服务。Windows Docker Desktop 使用 Linux containers，并需在 Windows 自行完成容器登录、API key 输入及内置 Kokoro 朗读测试。
 
-2026-10-08 已在 Windows Docker Desktop 的 Linux AMD64 容器验证 v0.3.0：补齐系统 CA 证书后，使用主机代理完成容器 ChatGPT 设备码登录；登录状态显示 `Logged in using ChatGPT`，Agent 状态接口返回 `connected: true`，加载 8 个模型。用户随后确认 Windows Docker Agent 模式实际生成测试成功。登录保存在原专用数据卷中；网页、健康接口和内置 Kokoro 41 个音色列表均通过。Mac Docker/OrbStack 的此次 Agent 登录与实际生成仍待用户更新后验证；此修复不重新打包 macOS DMG。
+2026-10-08 Windows Docker Desktop（Linux AMD64）实测：补齐系统 CA 证书后，通过主机代理完成容器 ChatGPT 设备码登录；登录状态为 `Logged in using ChatGPT`，Agent 状态返回 `connected: true`，发现 8 个模型。用户确认 Windows Docker Agent 实际生成成功。登录保存在原专用数据卷中；网页、健康检查及 Kokoro 41 个音色列表通过。
+
+2026-10-08 Mac OrbStack（ARM64）同步上述更新后实测：`ca-certificates` 已安装，app 与 Kokoro 容器均为 healthy，`/healthz` 返回 200；容器 Codex 登录状态为 `Logged in using ChatGPT`。使用页面 Agent 模式和 `gpt-6-luna` 在独立的「Agent 验收 10月8日」工作表运行两列依赖流程：输入「フレーム」，B 列生成日语解释（13.4 秒），C 列自动取得 B 的结果并生成中文解读（16.0 秒）；2/2 结果完成，运行与排队计数均回到 0。日语 Kokoro 实际请求返回有效 WAV。129 项自动化测试、TypeScript 类型检查及更新后的 Docker 镜像构建通过。登录凭证留在 OrbStack 专用 Codex 数据卷；未导出或提交凭证。该 Agent 验收表保留在浏览器，C 列提示词为快速测试设置的两句话，正式「日语词汇学习」工作表和提示词未改动。本次只同步并验证已有代码更新，没有新增应用代码。
 
 参考：[OrbStack 容器访问 Mac](https://docs.orbstack.dev/docker/network#connecting-to-servers-on-mac)、[Docker Desktop 主机网络](https://docs.docker.com/desktop/features/networking/networking-how-tos/)、[官方 Codex 认证](https://learn.chatgpt.com/docs/auth)、[Vinext 官方 Node 部署](https://github.com/cloudflare/vinext)。

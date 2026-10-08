@@ -51,6 +51,56 @@ CHAINFLOW_DEV_PROXY=http://127.0.0.1:7897 npm run dev -- --host 127.0.0.1 --port
 
 不用本地代理时设置 `CHAINFLOW_DEV_PROXY=off`。该配置没有密钥，且只在开发工具中生效。部署 Worker 不包含本地代理逻辑。
 
+## Windows / Mac Docker Agent 模式
+
+Agent 模式通过容器中的 Codex 使用你自己的 ChatGPT 订阅额度，不需要在页面填写 API key。Windows Docker Desktop 和 Mac OrbStack 都需先启动本项目，再为该容器完成一次 Codex 登录。登录保存在项目专用 Docker 数据卷中，重启或重新构建会保留。页面显示「ChatGPT 订阅」并列出模型后即可使用；选择模型（默认 `gpt-6-luna`），填写单元格并运行。
+
+**Windows（Docker Desktop）**：在 PowerShell 进入项目目录，例如 `F:\Projects\Chainflow-AI-Sheets`，然后更新并启动：
+
+```powershell
+git pull --ff-only origin main
+docker compose up -d --build
+docker compose ps
+```
+
+首次登录，在 PowerShell 执行：
+
+```powershell
+docker compose exec app /app/node_modules/.bin/codex -c 'cli_auth_credentials_store="file"' login --device-auth
+```
+
+若 Windows Docker Desktop 需要使用主机代理，在 Compose 项目的 `.env` 配置（端口按实际情况调整），再重建容器：
+
+```dotenv
+CHAINFLOW_HTTP_PROXY=http://host.docker.internal:7897
+```
+
+Codex 登录命令也要显式设置代理：
+
+```powershell
+docker compose exec -e HTTPS_PROXY=http://host.docker.internal:7897 -e HTTP_PROXY=http://host.docker.internal:7897 app /app/node_modules/.bin/codex -c 'cli_auth_credentials_store="file"' login --device-auth
+```
+
+**Mac（OrbStack）**：在「终端」进入项目目录，然后更新并启动：
+
+```sh
+git pull --ff-only origin main
+docker compose up -d --build
+docker compose ps
+```
+
+首次登录：
+
+```sh
+docker compose exec app /app/node_modules/.bin/codex -c 'cli_auth_credentials_store="file"' login --device-auth
+```
+
+OrbStack 通常会沿用 Mac 系统代理。如需指定代理，在项目 `.env` 设置 `CHAINFLOW_HTTP_PROXY=http://host.docker.internal:7897` 并重建；登录命令加上 `-e HTTPS_PROXY=http://host.docker.internal:7897 -e HTTP_PROXY=http://host.docker.internal:7897`。
+
+登录命令会显示 OpenAI 官方设备授权网址和一次性代码。只在官方页面输入终端显示的代码，并在自己的 ChatGPT 账户完成授权。**不要把一次性代码、登录凭证或 API key 粘贴到聊天、发给协助你的 Agent 或写入项目文件。**授权后在终端运行 `docker compose exec app /app/node_modules/.bin/codex login status`，确认显示 `Logged in using ChatGPT`，再回到网页「Agent 模式」点击「重新连接 / 更新模型」。如果页面仍未连接，先检查容器健康状态、代理和登录状态。
+
+不熟悉终端或 Docker 时，可以让 Codex 等编程 Agent 协助检查项目目录、执行更新和登录命令、解释错误；设备码输入和 ChatGPT 授权仍由你在官方页面亲自完成。详细代理与故障处理见 [Docker 说明](docker/README.md#codex-登录连接问题)。Agent 只处理单元格文本；生成和修正会消耗你的订阅额度。
+
 ## 马上测试
 
 首次打开显示空白的「未命名表格」。顶部可直接编辑表格名称，使用「新建表格」和「切换表格」管理多张表格；「删除表格」需确认，本次页面内可撤销最近一次删除。删除最后一张表会自动创建空白表格。各表格独立保存输入、提示词、结果历史、布局与执行设置；切换前自动保留当前修改。生成期间需先停止才能切换。旧版单张表格会自动迁移，原存储保留。JSON 导出整个工作簿（全部工作表、提示词、配置、历史结果及布局）；Excel（.xlsx）导出全部工作表的当前单元格内容，每张表格对应一个底部可切换的 Excel 标签；重复名称和 Excel 不支持的名称会自动调整。Excel 不保存提示词、历史记录或执行配置，完整备份请用 JSON。工作簿导入及导出按钮位于页面顶部「载入示例」左边。JSON 导入兼容新版工作簿和旧版单工作表，并新增导入的工作表，不覆盖现有数据。表格列表只保存在当前浏览器，跨设备需要分别导出备份。
