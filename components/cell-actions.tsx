@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, ChevronRight, Copy, Play, Square, Volume2 } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Copy, MoreHorizontal, Play, Square, Volume2 } from 'lucide-react';
 import type { Scheduler } from '../core/scheduler';
 import { labels, type Column, type Row } from '../core/types';
 import { selectedHistoryIndex } from '../core/result-history';
@@ -46,5 +46,34 @@ export function CellActions({ engine, row, column: col, rowIndex: index, columnI
     {speech.key === cellKey && speech.message && <div className={speech.phase === 'error' ? 'cell-error' : 'retry-note'} role={speech.phase === 'error' ? 'alert' : 'status'}>{speech.message}</div>}
     {cell.error && <div className={cell.status === 'queued' ? 'retry-note' : 'cell-error'} role={cell.status === 'queued' ? 'status' : 'alert'}>{cell.error}</div>}
     {cell.usage && i > 0 && <div className="usage">输入 {cell.usage.input} / 输出 {cell.usage.output} tokens</div>}
+  </>;
+}
+
+export function CompactCellActions({ engine, row, column: col, rowIndex: index, columnIndex: i, copiedCell, speech, ttsAvailable, onRun, onCopy, onSpeak }: CellActionProps) {
+  const cell = row.cells[col.id];
+  const history = i > 0 ? engine.recentResults(row.id, col.id) : [];
+  const historyIndex = selectedHistoryIndex(cell, history);
+  const cellKey = `${row.id}:${col.id}`;
+  return <div className="row-card-actions">
+    {col.ttsLanguage && col.ttsLanguage !== 'off' && <button aria-label={`朗读第 ${index + 1} 行 ${col.name}`} title={ttsAvailable ? `${ttsLanguages[col.ttsLanguage]}朗读` : '当前服务不支持 TTS'}
+      disabled={!cell.value.trim() || cell.status === 'running' || cell.status === 'queued' || !ttsAvailable} onClick={() => onSpeak(row.id, col, cell.value)}>
+      {speech.key === cellKey && speech.phase === 'loading' ? <span className="spinner"/> : speech.key === cellKey && speech.phase === 'playing' ? <Square size={17}/> : <Volume2 size={18}/>}
+    </button>}
+    <button aria-label={`复制第 ${index + 1} 行 ${col.name}`} title="复制完整内容" onClick={() => void onCopy(row.id, col.id, cell.preview ?? cell.value)}>
+      {copiedCell === cellKey ? <Check size={18}/> : <Copy size={17}/>}
+    </button>
+    {i > 0 && <details className="row-card-menu"><summary aria-label={`更多 ${col.name} 操作`} title={`更多 ${col.name} 操作`}><MoreHorizontal size={19}/></summary>
+      <div><button aria-label={`${cell.status === 'error' ? '重试' : '运行'}第 ${index + 1} 行 ${col.name}`} disabled={cell.status === 'running' || cell.status === 'queued'} onClick={event => { onRun(engine.targets('cell', row.id, col.id), true); event.currentTarget.closest('details')?.removeAttribute('open'); }}><Play size={15}/>重新生成</button>
+        {history.length > 0 && <div className="row-card-history"><button aria-label={`上一条历史 第 ${index + 1} 行 ${col.name}`} disabled={engine.busy || historyIndex <= 0} onClick={() => engine.selectHistory(row.id, col.id, historyIndex - 1)}><ChevronLeft size={17}/></button><span>历史 {historyIndex + 1}/{history.length}</span><button aria-label={`下一条历史 第 ${index + 1} 行 ${col.name}`} disabled={engine.busy || historyIndex >= history.length - 1} onClick={() => engine.selectHistory(row.id, col.id, historyIndex + 1)}><ChevronRight size={17}/></button></div>}
+      </div></details>}
+  </div>;
+}
+
+export function CompactCellFeedback({ row, column, speech }: Pick<CellActionProps, 'row' | 'column' | 'speech'>) {
+  const cell = row.cells[column.id];
+  const cellKey = `${row.id}:${column.id}`;
+  return <>
+    {speech.key === cellKey && speech.message && <div className={speech.phase === 'error' ? 'cell-error' : 'retry-note'} role={speech.phase === 'error' ? 'alert' : 'status'}>{speech.message}</div>}
+    {cell.error && <div className={cell.status === 'queued' ? 'retry-note' : 'cell-error'} role={cell.status === 'queued' ? 'status' : 'alert'}>{cell.error}</div>}
   </>;
 }
