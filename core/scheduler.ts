@@ -64,11 +64,13 @@ export class Scheduler {
   removeColumn(col:string){if(col===this.sheet.columns[0].id)throw new Error('输入列不能删除');if(this.sheet.columns.some(c=>c.sources.includes(col)))throw new Error('其他列仍依赖此列，请先修改它们的来源');this.sheet.rows.forEach(r=>{this.invalidate(r.id,new Set([col]));delete r.cells[col];});this.sheet.columns=this.sheet.columns.filter(c=>c.id!==col);this.emit();}
   moveColumn(col:string,delta:number){const cols=[...this.sheet.columns],i=cols.findIndex(c=>c.id===col),j=i+delta;if(i<1||j<1||j>=cols.length)return;[cols[i],cols[j]]=[cols[j],cols[i]];this.sheet.columns=cols;this.emit();}
   addRow(copy?:string){const source=this.sheet.rows.find(r=>r.id===copy);this.sheet.rows.push({id:id(),height:source?.height,cells:Object.fromEntries(this.sheet.columns.map((c,i)=>[c.id,emptyCell(source?.cells[c.id].value??'',i===0?'done':source?.cells[c.id].value?'stale':'idle')]))});this.emit();}
+  moveRow(rowId:string,delta:number){if(!Number.isInteger(delta)||Math.abs(delta)!==1)return;const from=this.sheet.rows.findIndex(row=>row.id===rowId),to=from+delta;if(from<0||to<0||to>=this.sheet.rows.length)return;[this.sheet.rows[from],this.sheet.rows[to]]=[this.sheet.rows[to],this.sheet.rows[from]];this.emit();}
   setRowHeight(rowId:string,height:number|null){const row=this.sheet.rows.find(item=>item.id===rowId);if(!row||row.height===height)return;if(height===null)delete row.height;else row.height=height;this.emit();}
   removeRow(row:string){this.invalidate(row,new Set(this.sheet.columns.map(c=>c.id)));this.sheet.rows=this.sheet.rows.filter(r=>r.id!==row);this.emit();this.pump();}
   recentResults(row:string,column:string){const cell=this.cell(row,column),col=this.sheet.columns.find(c=>c.id===column);return cell&&col?cellHistory(cell,historyLimit(col)):[];}
   selectHistory(row:string,column:string,index:number){const cell=this.cell(row,column);if(!cell||['running','queued'].includes(cell.status))return;const history=this.recentResults(row,column);if(!Number.isInteger(index)||index<0||index>=history.length)return;if(cell.value!==history[index])this.invalidate(row,descendants(this.sheet.columns,column));cell.history=history;cell.historyIndex=index;cell.value=history[index];cell.revision++;cell.status='done';delete cell.error;delete cell.usage;delete cell.elapsed;delete cell.preview;this.emit();this.pump();}
   replace(sheet:Sheet){if(this.busy)throw new Error('请先停止运行，等待计数回到 0');this.sheet=sheet;this.steps=[];this.emit();}
+  setRows(rows:Sheet['rows']){if(this.busy)throw new Error('请先停止运行，等待计数回到 0');if(rows.length>500)throw new Error('表格最多容纳 500 行');this.sheet={...this.sheet,rows};this.emit();}
   private pump(){
     if(this.wakeTimer){clearTimeout(this.wakeTimer);this.wakeTimer=null;}
     let changed=false,nextWake=Infinity;

@@ -9,7 +9,7 @@ if(!Number.isInteger(port)||port<1024||port>65535)throw Error('PORT must be 1024
 const proxyUrl=process.env.CHAINFLOW_HTTP_PROXY||undefined;
 if(proxyUrl){const url=new URL(proxyUrl);if(!['http:','https:'].includes(url.protocol)||!['host.docker.internal','127.0.0.1','localhost'].includes(url.hostname)||url.username||url.password||url.search||url.hash||url.pathname!=='/')throw Error('Invalid local HTTP proxy');}
 const dispatcher=proxyUrl?new ProxyAgent(proxyUrl):undefined;
-const fetcher:typeof fetch=(input,init)=>fetch(input,{...init,...(dispatcher?{dispatcher}:{})} as RequestInit);
+const fetcher:typeof fetch=(input,init)=>{const url=new URL(String(input));const localModel=url.hostname==='host.docker.internal'&&['1234','11434'].includes(url.port);return fetch(input,{...init,...(dispatcher&&!localModel?{dispatcher}:{})} as RequestInit);};
 const bridge=process.env.CHAINFLOW_CODEX_ENABLED==='false'?undefined:new CodexBridge('/tmp/chainflow-codex-workspace',proxyUrl);
 const lanAccess=process.env.CHAINFLOW_LAN_ACCESS==='true';
 const containerLoginError=(error:unknown):never=>{if(error instanceof LocalAgentError&&error.code==='codex_login')throw new LocalAgentError('codex_login','容器尚未使用 ChatGPT 订阅登录。请在项目目录运行 npm run docker:login，完成登录后点击重新连接',401);throw error;};

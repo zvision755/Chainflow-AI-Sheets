@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createLocalTtsHandler } from '../build/local-tts-http';
-import { defaultTtsConfig, readTtsConfig, ttsBaseUrl, validateTtsConfig, externalTtsConfig, externalTtsUrl } from '../core/tts';
+import { defaultTtsConfig, readTtsConfig, ttsBaseUrl, validateTtsConfig, externalTtsConfig, externalTtsUrl, volcengineTtsConfig } from '../core/tts';
 import { parseSheet, serialize } from '../core/storage';
 import { savedExample } from '../core/example-workflow';
 import { Scheduler } from '../core/scheduler';
-import { SpeechPlayer } from '../model/tts';
+import { SpeechPlayer, synthesizeSpeech } from '../model/tts';
 import { GET as capabilities } from '../app/api/capabilities/route';
 const base = 'http://127.0.0.1:3002';
 const payload = { url: defaultTtsConfig.url, model: 'kokoro', input: 'フレーム', language: 'ja', voice: 'jf_alpha', speed: 1 };
@@ -111,6 +111,39 @@ test('third-party speech forwards an explicit session key once with no language 
   const response=await handler(request({...payload,url:'https://api.openai.com/v1/audio/speech',model:'gpt-4o-mini-tts',voice:'alloy'},base,{Authorization:'Bearer tts-session-key'}),'speech');
   assert.equal(response.status,200);assert.equal(url,'https://api.openai.com/v1/audio/speech');assert.equal(sent.headers.Authorization,'Bearer tts-session-key');
   assert.equal(JSON.parse(sent.body).language,undefined);assert.equal(sent.body.includes('tts-session-key'),false);assert.equal(response.headers.get('cache-control'),'no-store');
+});
+test('optional VolcEngine community TTS uses only its fixed host, sends no key, and returns transient MP3',async()=>{
+  let destination='';let sent:RequestInit|undefined;
+  const mp3=new Uint8Array(64);mp3.set(new TextEncoder().encode('ID3'),0);mp3[3]=4;
+  const handler=createLocalTtsHandler((async(url,init)=>{destination=String(url);sent=init;return Response.json({audio:{data:Buffer.from(mp3).toString('base64')}});}) as typeof fetch);
+  const config=validateTtsConfig(volcengineTtsConfig);assert.equal(config.provider,'volcengine');
+  const response=await handler(request({url:config.url,model:config.model,input:'フレーム',language:'ja',voice:config.voices.ja,speed:1}),'speech');
+  assert.equal(response.status,200);assert.equal(destination,'https://translate.volcengine.com/crx/tts/v1/');
+  assert.equal(sent?.redirect,'error');assert.equal(sent?.cache,'no-store');assert.equal(new Headers(sent?.headers).get('authorization'),null);
+  assert.equal(new Headers(sent?.headers).get('origin'),'chrome-extension://klgfhbdadaspgppeadghjjemk');
+  assert.deepEqual(JSON.parse(String(sent?.body)),{text:'フレーム',speaker:'jp_male_satoshi',language:'jp'});
+  assert.equal(response.headers.get('content-type'),'audio/mpeg');assert.equal(response.headers.get('cache-control'),'no-store');assert.deepEqual(new Uint8Array(await response.arrayBuffer()),mp3);
+  assert.throws(()=>validateTtsConfig({...config,url:'https://attacker.example/v1'}));
+  assert.throws(()=>validateTtsConfig({...config,voices:{...config.voices,ja:'../../admin'}}));
+});
+test('optional VolcEngine TTS performs a short uncached online check without retaining returned audio',async()=>{
+  let sent:RequestInit|undefined;let calls=0;const mp3=new Uint8Array(64);mp3.set(new TextEncoder().encode('ID3'),0);
+  const handler=createLocalTtsHandler((async(_url,init)=>{calls++;sent=init;return Response.json({audio:{data:Buffer.from(mp3).toString('base64')}});}) as typeof fetch);
+  const response=await handler(request({url:'volcengine-free'}),'voices');assert.equal(response.status,200);assert.deepEqual(await response.json(),{voices:[]});
+  assert.equal(calls,1);assert.deepEqual(JSON.parse(String(sent?.body)),{text:'测试',speaker:'zh_male_xiaoming',language:'zh'});
+  const withKey=await handler(request({url:'volcengine-free'},base,{Authorization:'Bearer ignored'}),'voices');assert.equal(withKey.status,400);
+  const unavailable=createLocalTtsHandler((async()=>new Response('Bad Request',{status:400})) as typeof fetch);
+  const failed=await unavailable(request({url:'volcengine-free'}),'voices');assert.equal(failed.status,502);assert.match(((await failed.json())as{error:{message:string}}).error.message,/HTTP 400.*Kokoro/);
+});
+test('browser client accepts the optional provider audio without persisting it or sending credentials',async()=>{
+  const original=globalThis.fetch;let requestInit:RequestInit|undefined;
+  const mp3=new Uint8Array(64);mp3.set(new TextEncoder().encode('ID3'),0);
+  globalThis.fetch=(async(_input,init)=>{requestInit=init;return new Response(mp3,{headers:{'Content-Type':'audio/mpeg','Cache-Control':'no-store'}});}) as typeof fetch;
+  try {
+    const blob=await synthesizeSpeech('例文','ja',{...volcengineTtsConfig,provider:'volcengine'},new AbortController().signal);
+    assert.equal(blob.type,'audio/mpeg');assert.deepEqual(new Uint8Array(await blob.arrayBuffer()),mp3);
+    assert.equal(new Headers(requestInit?.headers).has('Authorization'),false);assert.equal(requestInit?.cache,'no-store');
+  } finally { globalThis.fetch=original; }
 });
 test('external connection tests validate account without synthesis and sanitize auth failure',async()=>{
   let calls=0,url='';const handler=createLocalTtsHandler((async(u)=>{calls++;url=String(u);return Response.json({data:[{id:'tts-1'}],private:'never echo'});}) as typeof fetch);

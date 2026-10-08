@@ -20,8 +20,12 @@ function allowedHostname(hostname:string,allowLan:boolean){
 export function hostTtsFetch(fetcher:typeof fetch=fetch):typeof fetch {
   return (input,init)=>{const url=new URL(String(input));if(!['127.0.0.1','localhost','[::1]'].includes(url.hostname))throw Error('Unexpected TTS destination');url.hostname='host.docker.internal';return fetcher(url,init);};
 }
+export function hostLocalModelFetch(fetcher:typeof fetch=fetch):typeof fetch {
+  return (input,init)=>{const url=new URL(String(input));if(['127.0.0.1','localhost','[::1]'].includes(url.hostname)){if(!['1234','11434'].includes(url.port))throw Error('Unexpected local model destination');url.hostname='host.docker.internal';}return fetcher(url,init);};
+}
 export function createDockerHandler(options:{bridge?:Pick<CodexBridge,'status'|'generate'>;fetcher?:typeof fetch;ttsFetcher?:typeof fetch;builtinTtsFetcher?:typeof fetch;runtime?:'docker'|'macos';builtinTtsUrl?:string;builtinTts?:boolean;ttsRuntime?:TtsRuntime;login?:()=>Promise<{authUrl:string}>;logout?:()=>Promise<void>;allowLan?:boolean}={}) {
   const runtime=options.runtime??'docker';
+  const modelFetcher=runtime==='docker'?hostLocalModelFetch(options.fetcher??fetch):options.fetcher??fetch;
   const tts=createLocalTtsHandler((input,init)=>['127.0.0.1','localhost','[::1]'].includes(new URL(String(input)).hostname) ? (options.ttsFetcher??hostTtsFetch())(input,init) : (options.fetcher??fetch)(input,init),90000,{url:options.builtinTtsUrl??'http://kokoro:8880/v1',fetcher:options.builtinTtsFetcher??fetch},options.allowLan===true);
   return async(request:Request):Promise<Response|null>=>{
     const url=new URL(request.url);
@@ -44,7 +48,7 @@ export function createDockerHandler(options:{bridge?:Pick<CodexBridge,'status'|'
       if(url.pathname.endsWith('/logout')&&options.logout){try{await options.logout();return json({ok:true});}catch{return json({error:{code:'codex_logout',message:'退出登录失败，请稍后重试',retryable:true}},503);}}
       return json({error:{code:'not_available',message:'当前版本不提供应用内登录',retryable:false}},404);
     }
-    if(url.pathname==='/api/generate'||url.pathname==='/api/models')return proxy(request,url.pathname==='/api/generate'?'generate':'models',options.fetcher);
+    if(url.pathname==='/api/generate'||url.pathname==='/api/models')return proxy(request,url.pathname==='/api/generate'?'generate':'models',modelFetcher,true);
     if(url.pathname==='/api/local-agent/status'||url.pathname==='/api/local-agent/generate')return options.bridge?localAgentRequest(request,url.pathname.endsWith('/status')?'status':'generate',options.bridge):json({error:{code:'codex_disabled',message:'容器 Codex 已关闭',retryable:false}},503);
     if(url.pathname==='/api/local-tts/voices'||url.pathname==='/api/local-tts/speech'){
       if(options.ttsRuntime&&!options.ttsRuntime.status().loaded){try{if(((await request.clone().json())as{url?:unknown})?.url==='builtin')return json({error:{code:'tts_model_unloaded',message:options.ttsRuntime.status().state==='loading'?'内置模型正在加载，请稍候':'内置模型未加载，请在「配置 TTS」中手动启用',retryable:false}},503);}catch{}}

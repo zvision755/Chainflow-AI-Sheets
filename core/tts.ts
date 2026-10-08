@@ -1,14 +1,22 @@
 export const ttsLanguages = { off: '不朗读', ja: '日语', en: '英语（美式）', 'en-gb': '英语（英式）', zh: '中文' } as const;
 export type TtsLanguage = keyof typeof ttsLanguages;
 export type SpokenLanguage = Exclude<TtsLanguage, 'off'>;
-export type TtsConfig = { provider?: 'builtin' | 'external'; url: string; model: string; speed: number; voices: Record<SpokenLanguage, string> };
+export type TtsProvider = 'builtin' | 'volcengine' | 'external';
+export type TtsConfig = { provider?: TtsProvider; url: string; model: string; speed: number; voices: Record<SpokenLanguage, string> };
 export type TtsSession = TtsConfig & { apiKey?: string };
 export const TTS_STORAGE = 'chainflow-tts-v1';
 export const defaultTtsConfig: TtsConfig = { provider: 'builtin', url: 'builtin', model: 'kokoro', speed: 1, voices: { ja: 'jf_alpha', en: 'af_heart', 'en-gb': 'bf_emma', zh: 'zf_xiaobei' } };
 export const externalTtsConfig: TtsConfig = { provider: 'external', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini-tts', speed: 1, voices: { ja: 'alloy', en: 'alloy', 'en-gb': 'alloy', zh: 'alloy' } };
+export const volcengineTtsConfig: TtsConfig = { provider: 'volcengine', url: 'volcengine-free', model: 'volcengine-tts', speed: 1, voices: { ja: 'jp_male_satoshi', en: 'en_male_adam', 'en-gb': 'tts.other.BV032_TOBI_streaming', zh: 'zh_male_xiaoming' } };
+export const volcengineVoices: Record<SpokenLanguage, string[]> = {
+  ja: ['jp_male_satoshi', 'jp_female_mai'],
+  en: ['en_male_adam', 'en_male_bob', 'en_female_sarah', 'tts.other.BV027_streaming'],
+  'en-gb': ['tts.other.BV032_TOBI_streaming'],
+  zh: ['zh_male_xiaoming', 'zh_female_qingxin', 'zh_female_story', 'zh_female_zhubo', 'tts.other.BV021_streaming', 'tts.other.BV026_streaming', 'tts.other.BV025_streaming'],
+};
 export const voicePrefixes: Record<SpokenLanguage, string> = { ja: 'j', en: 'a', 'en-gb': 'b', zh: 'z' };
 export const ttsRemoteHosts = ['api.openai.com', 'aihubmix.com', 'api.aihubmix.com', 'openrouter.ai', 'api.siliconflow.cn'];
-export function voiceMatches(voice: string, language: SpokenLanguage) { return new RegExp(`^${voicePrefixes[language]}[fm]_[a-z0-9_]{1,70}$`).test(voice); }
+export function voiceMatches(voice: string, language: SpokenLanguage, provider: TtsProvider = 'builtin') { return provider === 'volcengine' ? (volcengineVoices[language] ?? []).includes(voice) : new RegExp(`^${voicePrefixes[language]}[fm]_[a-z0-9_]{1,70}$`).test(voice); }
 export function ttsBaseUrl(value: string) {
   if (value === 'builtin') return value;
   const url = new URL(value.trim());
@@ -29,16 +37,18 @@ export function externalTtsUrl(value: string) {
 }
 export function validateTtsConfig(raw: unknown): TtsConfig {
   const value = raw as TtsConfig;
-  if (!value || typeof value.url !== 'string' || value.url.length > 500 || typeof value.model !== 'string' || !/^[a-zA-Z0-9._:/-]{1,100}$/.test(value.model) || !Number.isFinite(value.speed) || value.speed < 0.25 || value.speed > 4 || (value.provider !== undefined && !['builtin','external'].includes(value.provider))) throw new Error('请检查 TTS 地址、模型名称与语速');
+  if (!value || typeof value.url !== 'string' || value.url.length > 500 || typeof value.model !== 'string' || !/^[a-zA-Z0-9._:/-]{1,100}$/.test(value.model) || !Number.isFinite(value.speed) || value.speed < 0.25 || value.speed > 4 || (value.provider !== undefined && !['builtin','volcengine','external'].includes(value.provider))) throw new Error('请检查 TTS 地址、模型名称与语速');
   const builtin = value.provider === 'builtin' || value.url === 'builtin';
+  const volcengine = value.provider === 'volcengine' || value.url === 'volcengine-free';
+  if (volcengine && (value.provider !== 'volcengine' || value.url !== 'volcengine-free' || value.model !== 'volcengine-tts' || value.speed !== 1)) throw new Error('免配置火山 TTS 使用固定服务、模型与语速');
   if(builtin && (value.speed < 0.5 || value.speed > 2 || value.model !== 'kokoro')) throw new Error('内置 Kokoro 的语速范围为 0.5–2，模型为 kokoro');
   const voices = Object.fromEntries((Object.keys(voicePrefixes) as SpokenLanguage[]).map(language => {
     const voice = value.voices?.[language];
-    if (typeof voice !== 'string' || (builtin ? !voiceMatches(voice, language) : !/^[a-zA-Z0-9._:/-]{1,120}$/.test(voice))) throw new Error(`${ttsLanguages[language]}音色不正确`);
+    if (typeof voice !== 'string' || (builtin ? !voiceMatches(voice, language) : volcengine ? !voiceMatches(voice, language, 'volcengine') : !/^[a-zA-Z0-9._:/-]{1,120}$/.test(voice))) throw new Error(`${ttsLanguages[language]}音色不正确`);
     return [language, voice];
   })) as TtsConfig['voices'];
   // Explicit allowlist keeps API keys and unknown fields out of saved settings.
-  return { provider: builtin ? 'builtin' : 'external', url: builtin ? 'builtin' : externalTtsUrl(value.url), model: value.model, speed: value.speed, voices };
+  return { provider: builtin ? 'builtin' : volcengine ? 'volcengine' : 'external', url: builtin ? 'builtin' : volcengine ? 'volcengine-free' : externalTtsUrl(value.url), model: value.model, speed: value.speed, voices };
 }
 export function readTtsConfig(raw: string | null) {
   try { const data = JSON.parse(raw ?? 'null');
