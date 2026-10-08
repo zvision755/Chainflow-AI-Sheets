@@ -55,6 +55,8 @@ CHAINFLOW_DEV_PROXY=http://127.0.0.1:7897 npm run dev -- --host 127.0.0.1 --port
 
 Agent 模式通过容器中的 Codex 使用你自己的 ChatGPT 订阅额度，不需要在页面填写 API key。Windows Docker Desktop 和 Mac OrbStack 都需先启动本项目，再为该容器完成一次 Codex 登录。登录保存在项目专用 Docker 数据卷中，重启或重新构建会保留。页面显示「ChatGPT 订阅」并列出模型后即可使用；选择模型（默认 `gpt-6-luna`），填写单元格并运行。
 
+**模式选择建议：日常使用或重视响应速度时，优先选 API 模式**，请求通过你选定的 API 提供商和模型执行。Agent 模式适合希望直接使用 Codex ChatGPT 订阅、不想填写 API key 的场景，但响应会慢不少：本机 OrbStack 实测两步依赖生成分别耗时约 13.4 秒和 16.0 秒，实际速度会随任务、网络和账户状态变化。
+
 **Windows（Docker Desktop）**：在 PowerShell 进入项目目录，例如 `F:\Projects\Chainflow-AI-Sheets`，然后更新并启动：
 
 ```powershell
