@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, request as httpRequest } from 'node:http';
-import { createDockerHandler, hostTtsFetch, serveDockerRequest } from '../docker/http';
+import { createDockerHandler, hostLocalModelFetch, hostTtsFetch, serveDockerRequest } from '../docker/http';
 import { readGeneration } from '../model/stream';
 import { Scheduler } from '../core/scheduler';
 import { example } from '../core/types';
@@ -37,6 +37,13 @@ test('Docker HTTP guards reject missing keys, foreign origin/host, oversized inp
     const hostileHost=await new Promise<number|undefined>((resolve,reject)=>{const req=httpRequest(base+'/healthz',{headers:{Host:'evil.example'}},res=>{res.resume();resolve(res.statusCode);});req.on('error',reject);req.end();});assert.equal(hostileHost,403);
     assert.equal((await post(base,{...input,input:'x'.repeat(71000)})).status,413);assert.equal((await fetch(base+'/api/unknown',{method:'POST'})).status,404);assert.equal(calls,0);assert.equal((await fetch(base+'/healthz')).status,200);
   });
+});
+test('Docker maps only LM Studio and Ollama loopback ports to the host and permits keyless local model discovery',async()=>{
+  let destination='',authorization:string|undefined;
+  await fixture({fetcher:(async(url,init)=>{destination=String(url);authorization=new Headers(init?.headers).get('authorization')??undefined;return new Response(JSON.stringify({data:[{id:'qwen3.6-35b-a3b'}]}));}) as typeof fetch},async base=>{
+    const response=await fetch(base+'/api/models',{method:'POST',headers:{origin:base,'content-type':'application/json'},body:JSON.stringify({provider:'local',localProvider:'lmstudio',customUrl:'http://127.0.0.1:1234/v1'})});assert.equal(response.status,200);assert.equal(destination,'http://host.docker.internal:1234/v1/models');assert.equal(authorization,undefined);assert.deepEqual(await response.json(),{models:['qwen3.6-35b-a3b']});
+  });
+  let mapped='';const fetcher=(async url=>{mapped=String(url);return new Response('{}');}) as typeof fetch;await hostLocalModelFetch(fetcher)('http://localhost:11434/v1/models');assert.equal(mapped,'http://host.docker.internal:11434/v1/models');assert.throws(()=>hostLocalModelFetch(fetcher)('http://127.0.0.1:22/admin'));
 });
 test('Docker subscription route requires container login without credentials or owner API fallback',async()=>{
   let attempts=0;await fixture({bridge:{status:async()=>{attempts++;throw Error('private diagnostic');},generate:async()=>{throw Error('private diagnostic');}}},async base=>{

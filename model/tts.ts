@@ -1,4 +1,4 @@
-import type { SpokenLanguage, TtsConfig, TtsSession } from '../core/tts';
+import type { SpokenLanguage, TtsSession } from '../core/tts';
 export async function loadTtsVoices(url: string, signal: AbortSignal, apiKey = ''): Promise<string[]> {
   const response = await fetch('/api/local-tts/voices', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(apiKey ? {Authorization: `Bearer ${apiKey}`} : {}) }, body: JSON.stringify({ url }), signal, cache: 'no-store' });
   const data = await response.json() as { voices: string[]; error?: { message: string } };
@@ -10,14 +10,15 @@ export async function synthesizeSpeech(text: string, language: SpokenLanguage, c
   if (text.trim().length > 4096) throw new Error('单次最多朗读 4096 个字符，请缩短单元格文字');
   const response = await fetch('/api/local-tts/speech', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(config.provider === 'external' && config.apiKey ? {Authorization: `Bearer ${config.apiKey}`} : {}) }, body: JSON.stringify({ url: config.url, model: config.model, speed: config.speed, voice: config.voices[language], language, input: text.trim() }), signal, cache: 'no-store' });
   if (!response.ok) { const data = await response.json().catch(() => null) as { error?: { message: string } } | null; throw new Error(data?.error?.message ?? 'TTS 合成失败，请重试'); }
-  if (!response.headers.get('content-type')?.startsWith('audio/wav')) throw new Error('TTS 返回了不支持的音频格式');
+  const contentType = response.headers.get('content-type')?.split(';')[0];
+  if (!['audio/wav', 'audio/mpeg'].includes(contentType ?? '')) throw new Error('TTS 返回了不支持的音频格式');
   if (Number(response.headers.get('content-length')) > 32 * 1024 * 1024) { await response.body?.cancel(); throw new Error('音频过大，请缩短单元格文字'); }
   const reader = response.body?.getReader(); if (!reader) throw new Error('TTS 没有返回音频');
   const chunks: Uint8Array<ArrayBuffer>[] = []; let size = 0;
   try { for (;;) { const part = await reader.read(); if (part.done) break; size += part.value.length; if (size > 32 * 1024 * 1024) throw new Error('音频过大，请缩短单元格文字'); chunks.push(new Uint8Array(part.value)); } }
   finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
   if (!size) throw new Error('TTS 返回了空音频');
-  return new Blob(chunks, { type: 'audio/wav' });
+  return new Blob(chunks, { type: contentType });
 }
 type AudioHandle = Pick<HTMLAudioElement, 'src' | 'play' | 'pause' | 'load' | 'onended' | 'onerror'> & { removeAttribute(name: string): void };
 type SpeechState = { key?: string; phase: 'idle' | 'loading' | 'playing' | 'ready' | 'error'; message?: string };
@@ -59,7 +60,7 @@ export class SpeechPlayer {
       this.audio.onerror = () => { if (generation === this.generation) { this.releaseAudio(); this.spoken = undefined; this.update({ key, phase: 'error', message: '浏览器无法播放这段音频，请重试' }); } };
       await this.play(generation);
     } catch (error) {
-      if (generation === this.generation) { this.releaseAudio(); this.spoken = undefined; this.update({ key, phase: 'error', message: timedOut ? 'TTS 请求超时，已停止；请检查 Kokoro 或缩短文字' : error instanceof Error ? error.message : '朗读失败，请重试' }); }
+      if (generation === this.generation) { this.releaseAudio(); this.spoken = undefined; this.update({ key, phase: 'error', message: timedOut ? 'TTS 请求超时，已停止；请检查所选服务或缩短文字' : error instanceof Error ? error.message : '朗读失败，请重试' }); }
     } finally { clearTimeout(timeout); if (generation === this.generation) this.controller = undefined; }
   }
   private async play(generation: number) {

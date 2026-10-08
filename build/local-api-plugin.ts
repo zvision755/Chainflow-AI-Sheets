@@ -35,7 +35,7 @@ export function localApi(): Plugin {
         const request=new Request(`http://${host}${path}`,{method:'POST',headers,body:Buffer.concat(chunks).toString('utf8'),signal:abort.signal});
         const response=path?.startsWith('/api/local-tts/') ? await tts(request,path.endsWith('/voices')?'voices':'speech') : path?.startsWith('/api/local-agent/')
           ? await localAgentRequest(request,path.endsWith('/status')?'status':'generate',codex)
-          : await proxy(request,path==='/api/generate'?'generate':'models',forward);
+          : await proxy(request,path==='/api/generate'?'generate':'models',forward,true);
         res.statusCode=response.status;response.headers.forEach((v,k)=>res.setHeader(k,v));
         if(!response.body){res.end();return;}
         if(response.headers.get('content-type')?.includes('text/event-stream'))res.flushHeaders();

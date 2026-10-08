@@ -52,6 +52,12 @@ test('credential split across deltas is redacted before any frame or final outpu
   const response=await proxy(req({provider:'deepseek'}),'generate',(async()=>sse(frame({choices:[{delta:{content:'before '+key.slice(0,12)}}]})+frame({choices:[{delta:{content:key.slice(12)+' after'},finish_reason:'stop'}]})+frame('[DONE]'))) as typeof fetch);
   const seen:string[]=[];const result=await readGeneration(response,new AbortController().signal,t=>seen.push(t));assert.equal(result.text,'before [已隐藏密钥] after');assert.ok(seen.every(t=>!t.includes(key)&&!t.includes(key.slice(0,12))));
 });
+test('keyless local model streaming preserves every character of generated text',async()=>{
+  const local={provider:'local',localProvider:'lmstudio',customUrl:'http://127.0.0.1:1234/v1',model:'qwen3.6-35b-a3b',prompt:'用中文解释',input:'フレーム',maxTokens:64,reasoning:'none',stream:true};
+  const request=req(local);request.headers.delete('authorization');
+  const response=await proxy(request,'generate',(async()=>sse(frame({choices:[{delta:{content:'「框架」是……'}}]})+frame({choices:[{delta:{content:'一个结构。'},finish_reason:'stop'}]})+frame('[DONE]'))) as typeof fetch,true);
+  const seen:string[]=[];assert.deepEqual(await readGeneration(response,new AbortController().signal,text=>seen.push(text)),{text:'「框架」是……一个结构。',usage:{input:0,output:0}});assert.ok(seen.every(text=>!text.includes('[已隐藏密钥]')));
+});
 test('premature EOF, truncation and streamed quota failures never complete; raw upstream errors are hidden',async()=>{
   for(const [source,code] of [
     [frame({choices:[{delta:{content:'半截'}}]}),'stream_interrupted'],
@@ -73,6 +79,10 @@ test('SSE parser bounds bytes and reader abort cannot hang waiting for a silent 
 test('browser client sends one request, honors off, keeps key out of body, and accepts JSON fallback',async()=>{
   const original=globalThis.fetch;let calls=0,body:any;globalThis.fetch=(async(_p,i)=>{calls++;body=JSON.parse(String(i?.body));return new Response(JSON.stringify(ok('完整结果')));}) as typeof fetch;
   try{const result=await apiClient(()=>key,()=>({provider:'openai'}))(input,new AbortController().signal,{mode:'api',stream:false});assert.equal(result.text,'完整结果');assert.equal(calls,1);assert.equal(body.stream,false);assert.ok(!JSON.stringify(body).includes(key));}finally{globalThis.fetch=original;}
+});
+test('browser client permits no key only for the dedicated local provider and sends no authorization header',async()=>{
+  const original=globalThis.fetch;let headers:Headers|undefined;globalThis.fetch=(async(_p,i)=>{headers=new Headers(i?.headers);return new Response(JSON.stringify(ok('本地模型结果')));}) as typeof fetch;
+  try{const result=await apiClient(()=>'',()=>({provider:'local',customUrl:'http://127.0.0.1:1234/v1',localProvider:'lmstudio'}))(input,new AbortController().signal,{mode:'api',stream:false});assert.equal(result.text,'本地模型结果');assert.equal(headers?.has('authorization'),false);}finally{globalThis.fetch=original;}
 });
 test('scheduler previews without overwriting saved output; downstream waits for the final accepted result',async()=>{
   let release!:(v:ReturnType<typeof ok>)=>void;const gate=new Promise<ReturnType<typeof ok>>(r=>release=r),calls:string[]=[];const sheet=example();sheet.rows[0].cells.explain=emptyCell('旧结果','stale');
