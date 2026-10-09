@@ -12,8 +12,8 @@ const headers={'Cache-Control':'no-store, max-age=0','Pragma':'no-cache','Conten
 export function json(data:unknown,status=200){return new Response(JSON.stringify(data),{status,headers});}
 function fail(code:string,message:string,status:number,retryable=false){return json({error:{code,message,retryable}},status);}
 async function limitedText(body:ReadableStream<Uint8Array>|null,limit:number){if(!body)return '';const reader=body.getReader(),decoder=new TextDecoder();let size=0,text='';try{while(true){const {value,done}=await reader.read();if(done)break;size+=value.byteLength;if(size>limit)throw new Error('size');text+=decoder.decode(value,{stream:true});}return text+decoder.decode();}finally{await reader.cancel().catch(()=>{});reader.releaseLock();}}
-export async function proxy(request:Request,operation:'generate'|'models',fetcher:typeof fetch=fetch,allowLocal=false):Promise<Response>{
-  const origin=request.headers.get('origin');if(origin!==new URL(request.url).origin)return fail('origin','仅接受本站页面发出的请求',403);
+export async function proxy(request:Request,operation:'generate'|'models',fetcher:typeof fetch=fetch,allowLocal=false,authenticated=false):Promise<Response>{
+  const origin=request.headers.get('origin');if(!authenticated&&origin!==new URL(request.url).origin)return fail('origin','仅接受本站页面发出的请求',403);
   if(!request.headers.get('content-type')?.startsWith('application/json'))return fail('content_type','请使用 JSON 请求',415);
   const authorization=request.headers.get('authorization')??'';
   const match=authorization? /^Bearer ([a-zA-Z0-9_.-]{1,300})$/.exec(authorization):null;

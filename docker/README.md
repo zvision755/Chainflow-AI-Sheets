@@ -2,15 +2,16 @@
 
 适用于 Mac OrbStack 和 Windows Docker Desktop（Linux containers）。同一份 Dockerfile 按主机架构安装 Linux 原生依赖，支持 ARM64 和 AMD64。Docker 使用 Node 正式构建，不运行 Vite 开发服务、不挂载 Mac 路径，也不依赖 LaunchManager。默认访问地址为 **http://127.0.0.1:3003**，原 Mac 开发版仍在 3002。
 
-## v0.3.0 更新
+## 当前版本更新
 
-Docker 是主要维护版本。更新前先导出网页 JSON 备份，在项目目录执行 `git pull --ff-only origin main`、`docker compose up -d --build`，随后刷新原页面。工作簿数据存于浏览器，旧版单表格自动迁移；容器登录卷保留，不需要 `down -v`。本次新增多工作表管理、可调历史数量、触摸行高与独立标签 Excel 导出，并修复 LAN HTTP 生成与朗读。完整说明见 [更新记录](../CHANGELOG.md)。
+Docker 是主要维护版本。工作簿及模型/TTS 配置现在存于服务器 SQLite，同一账户跨设备共享。首次升级先生成独立主密钥；日常更新前做完整备份，再拉取代码并重建 app，保留数据库、主密钥和 Codex 登录卷。完整说明见 [更新记录](../CHANGELOG.md) 和 [备份恢复说明](../docs/server-storage.md)。
 
 ## 启动与管理
 
-在项目根目录运行（PowerShell/终端均可）：
+在项目根目录运行（PowerShell/终端均可）。首次部署先生成主密钥：
 
 ```sh
+node scripts/init-master-key.mjs
 docker compose up -d --build
 docker compose ps
 docker compose logs -f --tail=50
@@ -25,9 +26,11 @@ docker compose restart
 docker compose down
 ```
 
-`down` 删除容器和网络，保留登录数据卷；不要使用 `down -v`，除非确实要删除容器 Codex 登录。更新源码后重新执行 `docker compose up -d --build`。重新构建镜像不删除浏览器表格或登录卷。
+`down` 删除容器和网络，保留登录和数据库卷；不要使用 `down -v`，这会删除账户、工作簿和 Codex 登录。更新源码后重新执行 `docker compose up -d --build`。重新构建镜像不删除数据库或登录卷。
 
-默认只允许本机访问。若要从可信局域网的其他设备访问，在根目录 `.env` 中设置 `CHAINFLOW_BIND_ADDRESS=0.0.0.0` 与 `CHAINFLOW_LAN_ACCESS=true`，然后执行 `docker compose up -d`。启用后仅接受 loopback 或 RFC1918 私有 IPv4 Host，并继续校验 API/Agent 请求的同源 Origin；OrbStack 的「Expose ports to LAN」需要开启。页面没有用户登录或多用户隔离，LAN 中可访问者能使用此容器已登录的 Codex Agent 额度；只在可信网络中启用，不用于访客 Wi-Fi 或公网。关闭时删去这两项或设回默认值，再执行 `docker compose up -d`。
+首次部署或升级前运行 `node scripts/init-master-key.mjs` 生成独立加密主密钥，已有密钥不会覆盖。数据库和密钥需要一起备份，详见[服务端存储与恢复](../docs/server-storage.md)。
+
+Docker 现在统一使用可自定义用户名的密码认证，首次打开手动设置用户名和密码。TTS、Agent 和模型 API 都必须登录，不再将 localhost、私网 Host 或代理 Origin 作为权限条件。登录保留 30 天，容器更新保留原 Codex 卷及新增认证卷。需要从 LAN/NAS 访问时，在 `.env` 设置 `CHAINFLOW_BIND_ADDRESS=0.0.0.0`，并允许 Windows 专用网络 TCP 3003；默认端口仍仅绑定本机。详见[管理员登录、fnOS 兼容与手机验证](../docs/admin-login.md)。
 
 ### 手机视图测试
 
@@ -43,17 +46,17 @@ docker compose ps
 
 手机右下角 + 支持任意列输入、运行后留在详情、连续新增或提交后关闭；点击已有格子可查看整行。详情关闭不影响后台任务。完整说明见 [Mobile View](../docs/mobile-view.md)。测试范围包括 150 项核心／服务端测试及 26 项浏览器测试；真机触屏、键盘和音频播放仍需实测。
 
-工作簿仍保存在访问设备的浏览器内。可从 Mac 导出 JSON，通过 iCloud／rclone 将文件传到 Windows，再在需要的浏览器中导入；没有要求部署跨设备同步服务。JSON 不含模型连接凭证。
+工作簿以服务器数据库为准，手机与电脑登录同一账户后共享。切换设备前等待“已保存到服务器”，另一台已打开的页面需刷新。JSON 仍可用于导入导出，不含模型连接凭证。
 
 ## API 模式与表格迁移
 
-API 模式仍使用页面填写的访客密钥、受控官方/自定义地址转发，以及原有调度、流式、有限重试和导入导出。连接设置另有独立的「本地大语言模型」入口，支持宿主机 LM Studio（1234）和 Ollama（11434）的 OpenAI 兼容接口，可不填 key；Docker 仅把这两个本机端口映射至宿主机，不允许任意内网 URL。若启用局域网访问，局域网中任何能访问 ChainFlow 的人都可能调用宿主机上的本地模型；应用没有用户登录隔离，仅在可信网络开放。容器没有站点所有者 API key、密钥环境变量或后备凭证。请求失败不会自动切换 Codex。API 与公开 Sites 模式保持独立。
+API 模式使用管理员保存的加密密钥和受控上游地址，由后端解密并发起请求；保留原有调度、流式、有限重试和导入导出。连接设置另有独立的「本地大语言模型」入口，支持宿主机 LM Studio（1234）和 Ollama（11434）的 OpenAI 兼容接口，可不填 key；Docker 仅把这两个本机端口映射至宿主机，不允许任意内网 URL。本地模型 API 也经过管理员登录和 CSRF 校验；未登录的局域网设备不能调用。镜像和明文环境变量不包含模型密钥；数据库只保存加密密钥，主密钥通过独立 Docker Secret 提供。请求失败不会自动切换 Codex。API 与公开 Sites 模式保持独立。
 
-浏览器把不同端口看作不同站点。3002 的表格、TTS 配置和可选记忆密钥不会自动出现在 3003。在原页面「导出 JSON」，再到 Docker 页面「导入 JSON」迁移表格；输入、结果、列提示词、模板、宽度和语言都会保留，JSON 不含 API key。密钥须在新页面自行填写。访问时始终保持同一个地址（127.0.0.1 与 localhost 也属于不同站点）。表格没有存入容器文件系统或数据卷，浏览器备份仍需自己导出。
+原 Mac 3002 开发版的浏览器数据不会自动出现在 Docker。可在原页面导出 JSON，再到 Docker 导入；输入、结果、列提示词、模板、宽度和语言保留，JSON 不含 API Key。旧 Docker 浏览器数据可通过迁移入口上传；没有需要迁移的数据时，可创建全新空白工作簿。迁移后不同地址只需分别登录，同享服务器数据。
 
 ## Codex 订阅 Agent
 
-镜像包含项目内、锁定版本的官方 `@openai/codex` CLI；不使用 Windows/Mac 的可执行文件。容器启动独立 stdio App Server，沿用已有的规划、检查、有限修正和流式桥接；默认模型 `gpt-6-luna`，从容器账户加载可选模型。镜像没有登录凭证，不读取或挂载主机 `.codex`。
+镜像包含项目内、锁定版本的官方 `@openai/codex` CLI；不使用 Windows/Mac 的可执行文件。容器启动独立 stdio App Server，沿用已有的受限工具权限和流式桥接，不强制结果包含来源原文；默认模型 `gpt-6-luna`，从容器账户加载可选模型。镜像没有登录凭证，不读取或挂载主机 `.codex`。
 
 首次使用时由你完成容器登录：
 
@@ -112,9 +115,9 @@ docker compose exec -e HTTPS_PROXY=http://host.docker.internal:7897 -e HTTP_PROX
 
 ## 安全与健康检查
 
-多阶段镜像仅包含正式前端/服务端、运行依赖和 Codex；构建上下文采用目录白名单，忽略 `.env`、auth.json、txt 密钥文件、node_modules、输出/浏览器备份和 Git/tool state。运行用户为 `node`，根文件系统只读，临时工作区在 `/tmp`，仅 Codex 专用卷可持久写入（TTS 模型只读）；不挂载 Docker socket 或主机目录。进程退出有停止时限，容器日志滚动限制为 3×10 MB，应用不记录请求正文、Authorization、密钥或 Codex 原始诊断。
+多阶段镜像仅包含正式前端/服务端、运行依赖和 Codex；构建上下文采用目录白名单，忽略 `.env`、auth.json、txt 密钥文件、node_modules、输出/浏览器备份和 Git/tool state。运行用户为 `node`，根文件系统只读，临时工作区在 `/tmp`，Codex 登录卷和 app-data 卷可持久写入（TTS 模型只读），主密钥以只读 Secret 挂载；不挂载 Docker socket 或任意主机目录。进程退出有停止时限，容器日志滚动限制为 3×10 MB，应用不记录请求正文、Authorization、密钥或 Codex 原始诊断。
 
-健康检查访问 `/healthz`，只检查服务响应，不请求模型或消耗额度。`healthy` 不代表已登录 Codex、模型有权限或 API key 正确。原有服务端限制继续生效：70 KB 请求、1.5 MB 模型响应、32,000 输出字符、每个凭证最多 3 并发和有限重试，流式直到结束/取消才释放并发。
+健康检查访问 `/healthz`，只检查服务响应，不请求模型或消耗额度。`healthy` 不代表已登录 Codex、模型有权限或 API key 正确。原有服务端限制继续生效：工作簿写入最多 20 MB，其他请求 70 KB、1.5 MB 模型响应、32,000 输出字符、每个凭证最多 3 并发和有限重试，流式直到结束/取消才释放并发。
 
 ## 验证
 

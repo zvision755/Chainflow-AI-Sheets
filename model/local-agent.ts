@@ -1,4 +1,5 @@
 import type { Generate, GenerateResult } from '../core/types';
+import { sessionFetch as fetch } from './session';
 import { ModelError } from './client';
 import { readGeneration } from './stream';
 export type AgentModel={id:string;name:string;efforts:string[];defaultEffort:string};
