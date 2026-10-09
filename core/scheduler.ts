@@ -65,11 +65,13 @@ export class Scheduler {
   addColumn(column:Column){const columns=[...this.sheet.columns,column];topological(columns);this.sheet.columns=columns;this.sheet.rows.forEach(r=>r.cells[column.id]=emptyCell());this.emit();}
   removeColumn(col:string){if(col===this.sheet.columns[0].id)throw new Error('输入列不能删除');if(this.sheet.columns.some(c=>c.sources.includes(col)))throw new Error('其他列仍依赖此列，请先修改它们的来源');this.sheet.rows.forEach(r=>{this.invalidate(r.id,new Set([col]));delete r.cells[col];});this.sheet.columns=this.sheet.columns.filter(c=>c.id!==col);this.emit();}
   moveColumn(col:string,delta:number){const cols=[...this.sheet.columns],i=cols.findIndex(c=>c.id===col),j=i+delta;if(i<1||j<1||j>=cols.length)return;[cols[i],cols[j]]=[cols[j],cols[i]];this.sheet.columns=cols;this.emit();}
-  addRow(copy?:string,values:Record<string,string>={}){
+  addRow(copy?:string,values:Record<string,string>={},afterRowId?:string){
     if(this.sheet.rows.length>=500)throw Error('表格最多容纳 500 行');
     if(Object.keys(values).some(key=>!this.sheet.columns.some(column=>column.id===key))||Object.values(values).some(value=>value.length>32000))throw Error('请检查录入列及内容长度');
+    const anchor=afterRowId===undefined?this.sheet.rows.length-1:this.sheet.rows.findIndex(row=>row.id===afterRowId);
+    if(afterRowId!==undefined&&anchor<0)throw Error('插入位置的原行已删除，请保留草稿并重新选择插入位置');
     const source=this.sheet.rows.find(r=>r.id===copy),rowId=id();
-    this.sheet.rows.push({id:rowId,height:source?.height,cells:Object.fromEntries(this.sheet.columns.map((c,i)=>{const value=values[c.id]??source?.cells[c.id].value??'';return [c.id,emptyCell(value,i===0||values[c.id]?.trim()?'done':source?.cells[c.id].value?'stale':'idle')];}))});this.emit();return rowId;
+    this.sheet.rows.splice(anchor+1,0,{id:rowId,height:source?.height,cells:Object.fromEntries(this.sheet.columns.map((c,i)=>{const value=values[c.id]??source?.cells[c.id].value??'';return [c.id,emptyCell(value,i===0||values[c.id]?.trim()?'done':source?.cells[c.id].value?'stale':'idle')];}))});this.emit();return rowId;
   }
   moveRow(rowId:string,delta:number){if(!Number.isInteger(delta)||Math.abs(delta)!==1)return;const from=this.sheet.rows.findIndex(row=>row.id===rowId),to=from+delta;if(from<0||to<0||to>=this.sheet.rows.length)return;[this.sheet.rows[from],this.sheet.rows[to]]=[this.sheet.rows[to],this.sheet.rows[from]];this.emit();}
   setRowHeight(rowId:string,height:number|null){const row=this.sheet.rows.find(item=>item.id===rowId);if(!row||row.height===height)return;if(height===null)delete row.height;else row.height=height;this.emit();}

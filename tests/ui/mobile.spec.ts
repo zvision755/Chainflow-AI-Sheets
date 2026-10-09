@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { emptyCell, newColumn, type Sheet } from '../../core/types';
 import { defaultRunOptions } from '../../core/run-settings';
+import { serialize } from '../../core/storage';
 
 function fixture(rows = 2): Sheet {
   const columns = [newColumn('a', '原始内容', []), newColumn('b', '整理', ['a']), newColumn('c', '解读', ['b']), newColumn('d', '摘要', ['c'])];
@@ -258,10 +259,11 @@ test('portrait layout keeps navigation, title, headers, rows and short detail ca
   await expect(page.locator('.row-detail-footer button')).toHaveText('运行');
 });
 
-test('last row navigates to an empty draft; blank close adds nothing and filled close saves', async ({ page }) => {
+test('last row next stays disabled; plus opens draft, blank close adds nothing and filled close saves', async ({ page }) => {
   await open(page, fixture(1));
   await page.getByRole('button', { name: '查看第 1 行 原始内容', exact: true }).click();
-  await page.getByRole('button', { name: '下一行', exact: true }).click();
+  await expect(page.getByRole('button', { name: '下一行', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: '新增行', exact: true }).click();
   await expect(page.getByRole('heading', { name: '新建行' })).toBeVisible();
   await page.getByRole('button', { name: '关闭行详情' }).click();
   await expect(page.locator('.mobile-table tbody tr')).toHaveCount(1);
@@ -294,4 +296,41 @@ test('failed draft persistence keeps the draft visible and retry saves one row',
   await page.getByRole('button', { name: '关闭行详情' }).click();
   await expect(page.locator('.row-detail-sheet')).toHaveCount(0);
   await expect(page.locator('.mobile-table tbody tr')).toHaveCount(1);
+});
+test('detail plus inserts after row 10 and continuous drafts retain order; overview still appends',async({page})=>{
+  const sheet=fixture(65);sheet.rows[10].cells.b=emptyCell('保留的原输出','done');
+  await open(page,sheet);
+  const original=JSON.parse(serialize(sheet)).rows[10];
+  await page.getByRole('button',{name:'查看第 10 行 原始内容',exact:true}).click();
+  await page.getByRole('button',{name:'新增行',exact:true}).click();
+  await page.getByRole('button',{name:'关闭行详情',exact:true}).click();
+  await expect(page.locator('.mobile-table tbody tr')).toHaveCount(65);
+  await page.getByRole('button',{name:'查看第 10 行 原始内容',exact:true}).click();
+  await page.getByRole('button',{name:'新增行',exact:true}).click();
+  await page.getByLabel('填写 原始内容',{exact:true}).fill('備える');
+  await page.getByRole('button',{name:'下一行',exact:true}).click();
+  await page.getByLabel('填写 原始内容',{exact:true}).fill('続ける');
+  await page.getByRole('button',{name:'下一行',exact:true}).click();
+  await page.getByLabel('填写 原始内容',{exact:true}).fill('終える');
+  await page.getByRole('button',{name:'关闭行详情',exact:true}).click();
+  await expect(page.locator('.mobile-table tbody tr')).toHaveCount(68);
+  const rows=await page.evaluate(()=>JSON.parse(localStorage.getItem('chainflow-workspace-v1')!).tables[0].sheet.rows);
+  expect(rows.slice(10,13).map((row:any)=>row.cells.a.value)).toEqual(['備える','続ける','終える']);
+  expect(rows[13]).toEqual(original);
+  await page.getByRole('button',{name:'新增一行',exact:true}).click();
+  await page.getByLabel('填写 原始内容',{exact:true}).fill('总览末尾');
+  await page.getByRole('button',{name:'关闭行详情',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('chainflow-workspace-v1')!).tables[0].sheet.rows.at(-1).cells.a.value)).toBe('总览末尾');
+});
+test('inserted draft runs on row 2 and preserves row 3',async({page})=>{
+  await page.route('**/api/generate',route=>route.fulfill({json:{text:route.request().postDataJSON().input+'输出',usage:{input:1,output:1}}}));
+  await open(page);await connect(page);
+  await page.getByRole('button',{name:'查看第 1 行 原始内容',exact:true}).click();
+  await page.getByRole('button',{name:'新增行',exact:true}).click();
+  await page.getByLabel('填写 解读',{exact:true}).fill('插入来源');
+  await page.getByRole('button',{name:'运行',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'第 2 行',exact:true})).toBeVisible();
+  await expect(page.locator('[data-column-id="d"] .row-card-text')).toHaveText('插入来源输出');
+  await page.getByRole('button',{name:'下一行',exact:true}).click();
+  await expect(page.locator('[data-column-id="a"] .row-card-text')).toHaveText('记录 2');
 });

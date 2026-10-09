@@ -23,8 +23,8 @@ function TextEditor({ value, label, onChange, onFocus }: { value: string; label:
 }
 
 export function RowDetailSheet({ engine, selection, message, revision, suspended, onClose, onSelect, onSubmit, onSaveDraft, onInputColumn, onRemove, onMove, actions }: {
-  engine: Scheduler; selection: { rowId: string | null; columnId: string }; message: string; revision: number; suspended: boolean;
-  onClose: () => void; onSelect: (rowId: string | null, columnId: string) => void;
+  engine: Scheduler; selection: { rowId: string | null; columnId: string; afterRowId?: string }; message: string; revision: number; suspended: boolean;
+  onClose: () => void; onSelect: (rowId: string | null, columnId: string, afterRowId?: string) => void;
   onSubmit: (values: Record<string, string>) => boolean;
   onSaveDraft: (values: Record<string, string>) => string | null; onInputColumn: (columnId: string) => void;
   onRemove: (rowId: string) => void; onMove: (rowId: string, delta: number) => void;
@@ -53,18 +53,20 @@ export function RowDetailSheet({ engine, selection, message, revision, suspended
   function openNew() {
     withLock(() => {
       if (sheet.rows.length >= 500) return;
+      let afterRowId = selection.rowId ?? selection.afterRowId;
       if (isNew) {
         if (!dirty) return;
-        if (!onSaveDraft(values)) return;
+        const saved = onSaveDraft(values);
+        if (!saved) return;
+        afterRowId = saved;
         setValues({}); setEditing(new Set()); setEntryVersion(value => value + 1);
       }
-      onSelect(null, selection.columnId);
+      onSelect(null, selection.columnId, afterRowId);
     });
   }
   function nextRow() {
     if (isNew) { openNew(); return; }
     if (rowIndex < sheet.rows.length - 1) onSelect(sheet.rows[rowIndex + 1].id, selection.columnId);
-    else openNew();
   }
   function submit() {
     if (rowBusy || (isNew && !dirty)) return;
@@ -130,8 +132,8 @@ export function RowDetailSheet({ engine, selection, message, revision, suspended
         <div className="row-detail-title"><small>{sheet.name || '未命名表格'}</small><h2 id="row-detail-title">{isNew ? '新建行' : `第 ${rowIndex + 1} 行`}</h2>{!isNew && <MobileStatusIcon status={rowState} interactive/>}</div>
         <nav className="row-detail-nav" aria-label="行操作">
           <button aria-label="上一行" disabled={isNew || rowIndex <= 0} onClick={() => onSelect(sheet.rows[rowIndex - 1].id, selection.columnId)}><ChevronLeft size={21}/></button>
-          <button aria-label="下一行" disabled={locked || sheet.rows.length >= 500 && (isNew || rowIndex === sheet.rows.length - 1)} onClick={nextRow}><ChevronRight size={21}/></button>
-          <button aria-label="新增行" disabled={locked || sheet.rows.length >= 500} onClick={openNew}><Plus size={20}/></button>
+          <button aria-label="下一行" disabled={locked || (!isNew && rowIndex >= sheet.rows.length - 1) || (isNew && sheet.rows.length >= 500)} onClick={nextRow}><ChevronRight size={21}/></button>
+          <button aria-label="新增行" title={isNew ? '保存并继续新增' : '在当前行下方插入'} disabled={locked || sheet.rows.length >= 500} onClick={openNew}><Plus size={20}/></button>
           <details className="row-detail-more"><summary aria-label="更多行操作"><MoreHorizontal size={20}/></summary><div>
             {!isNew && row && <><button disabled={rowIndex <= 0} onClick={event => { onMove(row.id, -1); event.currentTarget.closest('details')?.removeAttribute('open'); }}><ArrowUp size={16}/>上移此行</button><button disabled={rowIndex >= sheet.rows.length - 1} onClick={event => { onMove(row.id, 1); event.currentTarget.closest('details')?.removeAttribute('open'); }}><ArrowDown size={16}/>下移此行</button><button onClick={event => { setRemoveConfirm(true); event.currentTarget.closest('details')?.removeAttribute('open'); }}><Trash2 size={16}/>删除此行</button></>}
             {engine.busy && <button onClick={event => { engine.stop(); event.currentTarget.closest('details')?.removeAttribute('open'); }}><Square size={16}/>停止全部任务</button>}

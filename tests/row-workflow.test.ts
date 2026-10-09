@@ -96,3 +96,51 @@ test('upstream completion respects explicit manual boundaries during the same ro
   assert.equal(row.cells.c.value, 'C 手动来源'); assert.equal(row.cells.c.status, 'done');
   assert.equal(row.cells.d.value, 'C 手动来源生成'); assert.equal(row.cells.d.status, 'done');
 });
+test('65 rows: insertion preserves original records/history and advances continuous anchors', () => {
+  const sheet=fixture(), engine=new Scheduler(sheet,async()=>{throw Error('not running');});
+  const ids=Array.from({length:65},(_,i)=>engine.addRow(undefined,{a:`原第 ${i+1} 行`}));
+  sheet.rows[10].cells.b=emptyCell('原输出','done');
+  sheet.rows[10].cells.b.history=['旧输出','原输出'];sheet.rows[10].cells.b.historyIndex=1;
+  const before=JSON.stringify(sheet.rows), originals=[...sheet.rows];
+  let anchor=ids[9];
+  const inserted=['備える','続ける','終える'].map((value,index)=>{
+    anchor=engine.addRow(undefined,{a:value},anchor);
+    if(index===0){assert.equal(sheet.rows.length,66);assert.equal(sheet.rows[10].id,anchor);assert.equal(sheet.rows[11].id,ids[10]);}
+    return anchor;
+  });
+  assert.equal(sheet.rows.length,68);
+  assert.deepEqual(sheet.rows.slice(10,13).map(row=>row.id),inserted);
+  assert.equal(sheet.rows[13].id,ids[10]);
+  assert.equal(JSON.stringify(sheet.rows.filter(row=>ids.includes(row.id))),before);
+  originals.forEach(row=>assert.equal(sheet.rows.find(item=>item.id===row.id),row));
+  assert.equal(new Set(sheet.rows.map(row=>row.id)).size,68);
+  const last=engine.addRow(undefined,{a:'末尾插入'},ids[64]);
+  assert.equal(sheet.rows.at(-1)?.id,last);
+  const appended=engine.addRow(undefined,{a:'总览追加'});
+  assert.equal(sheet.rows.at(-1)?.id,appended);
+});
+test('stable insertion anchor follows moves and deleted anchor fails without mutating data',()=>{
+  const sheet=fixture(),engine=new Scheduler(sheet,async()=>{throw Error('not running');});
+  const a=engine.addRow(),b=engine.addRow(),c=engine.addRow();
+  engine.moveRow(a,1);
+  const inserted=engine.addRow(undefined,{b:'任意列'},a);
+  assert.deepEqual(sheet.rows.map(row=>row.id),[b,a,inserted,c]);
+  engine.removeRow(a);const before=serialize(sheet);
+  assert.throws(()=>engine.addRow(undefined,{a:'保留草稿'},a),/原行已删除/);
+  assert.equal(serialize(sheet),before);
+});
+test('insertion during async generation preserves ID-bound outputs on original and new rows',async()=>{
+  const sheet=fixture(),engine=new Scheduler(sheet,async payload=>{
+    await new Promise(resolve=>setTimeout(resolve,20));
+    return {text:payload.input+'结果',usage:{input:1,output:1}};
+  });
+  const original=engine.addRow(undefined,{c:'原任务'}),other=engine.addRow(undefined,{c:'后行'});
+  engine.run(rowWorkflow(sheet,original).targets,options);
+  const inserted=engine.addRow(undefined,{c:'新任务'},original);
+  engine.run(rowWorkflow(sheet,inserted).targets,options);
+  await finish(engine);
+  assert.deepEqual(sheet.rows.map(row=>row.id),[original,inserted,other]);
+  assert.equal(sheet.rows.find(row=>row.id===original)!.cells.d.value,'原任务结果');
+  assert.equal(sheet.rows.find(row=>row.id===inserted)!.cells.d.value,'新任务结果');
+  assert.equal(sheet.rows.find(row=>row.id===other)!.cells.d.value,'');
+});
