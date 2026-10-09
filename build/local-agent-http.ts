@@ -9,9 +9,9 @@ export function localRequestAllowed(host:string,address:string|undefined){
   try{return ['127.0.0.1','localhost','[::1]'].includes(new URL(`http://${host}`).hostname)&&['127.0.0.1','::1','::ffff:127.0.0.1'].includes(address??'');}catch{return false;}
 }
 const fail=(code:string,message:string,status:number,retryable=false)=>json({error:{code,message,retryable}},status);
-export async function localAgentRequest(request:Request,operation:'status'|'generate',bridge:Pick<CodexBridge,'status'|'generate'>){
+export async function localAgentRequest(request:Request,operation:'status'|'generate',bridge:Pick<CodexBridge,'status'|'generate'>,authenticated=false){
   if(request.method!=='POST')return fail('method','请使用 POST 请求',405);
-  if(request.headers.get('origin')!==new URL(request.url).origin)return fail('origin','本地 Agent 只接受本机同源页面请求',403);
+  if(!authenticated&&request.headers.get('origin')!==new URL(request.url).origin)return fail('origin','本地 Agent 只接受本机同源页面请求',403);
   if(!request.headers.get('content-type')?.startsWith('application/json'))return fail('content_type','请使用 JSON 请求',415);
   if(request.headers.has('authorization'))return fail('unexpected_key','本地 Codex Agent 不接受 API key',400);
   let raw:unknown;try{

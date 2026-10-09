@@ -21,6 +21,9 @@ services:
       CHAINFLOW_HTTP_PROXY: "${CHAINFLOW_HTTP_PROXY:-}"
     volumes:
       - codex-login:/data/codex
+      - app-data:/data/chainflow
+    secrets:
+      - chainflow_master_key
     read_only: true
     tmpfs:
       - /tmp:size=128m,mode=1777
@@ -60,6 +63,10 @@ services:
         max-file: "3"
 volumes:
   codex-login:
+  app-data:
 networks:
   speech:
     internal: true
+secrets:
+  chainflow_master_key:
+    file: ${CHAINFLOW_MASTER_KEY_PATH:-./local-only/secrets/master-key}

@@ -1,4 +1,5 @@
 import type { SpokenLanguage, TtsSession } from '../core/tts';
+import { sessionFetch as fetch } from './session';
 export async function loadTtsVoices(url: string, signal: AbortSignal, apiKey = ''): Promise<string[]> {
   const response = await fetch('/api/local-tts/voices', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(apiKey ? {Authorization: `Bearer ${apiKey}`} : {}) }, body: JSON.stringify({ url }), signal, cache: 'no-store' });
   const data = await response.json() as { voices: string[]; error?: { message: string } };

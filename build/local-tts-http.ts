@@ -27,13 +27,13 @@ function isPrivateIPv4(hostname: string) {
 }
 export function createLocalTtsHandler(fetcher: typeof fetch = fetch, speechTimeout = 90000, builtin = { url: 'http://127.0.0.1:8881/v1', fetcher }, allowLan = false) {
   let active = 0;
-  return async (request: Request, operation: 'voices' | 'speech') => {
+  return async (request: Request, operation: 'voices' | 'speech', authenticated = false) => {
     if (request.method !== 'POST') return fail('method', '请使用 POST 请求', 405);
     const pageUrl = new URL(request.url);
     const origin = pageUrl.origin;
     const localHost = ['127.0.0.1', 'localhost', '[::1]'].includes(pageUrl.hostname);
     const lanHost = allowLan && isPrivateIPv4(pageUrl.hostname);
-    if ((!localHost && !lanHost) || request.headers.get('origin') !== origin) return fail('origin', 'TTS 只接受本机同源页面请求', 403);
+    if (!authenticated && ((!localHost && !lanHost) || request.headers.get('origin') !== origin)) return fail('origin', 'TTS 只接受本机同源页面请求', 403);
     if (!request.headers.get('content-type')?.startsWith('application/json')) return fail('content_type', '请使用 JSON 请求', 415);
     const authorization = request.headers.get('authorization');
     if(authorization && !/^Bearer [^\s]{1,500}$/.test(authorization)) return fail('tts_key','TTS 密钥格式不正确',400);

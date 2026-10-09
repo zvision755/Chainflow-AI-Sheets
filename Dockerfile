@@ -30,7 +30,7 @@ ENV NODE_ENV=production PORT=8080 NEXT_TELEMETRY_DISABLED=1 \
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist-docker ./dist-docker
 COPY --from=build --chown=node:node /app/package.json ./package.json
-RUN mkdir -p /data/codex && chown -R node:node /data
+RUN mkdir -p /data/codex /data/chainflow && chown -R node:node /data
 USER node
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

@@ -8,19 +8,22 @@
 
 正在开发的 **Mobile View** 与电脑版共享工作簿和运行引擎：宽度小于 768px 自动使用手机表格，菜单可选择「自动适配／手机版／电脑版」，偏好保存在当前浏览器。手机表格以紧凑行预览最多两行文字；点击任意格子可查看、编辑整行，复制全文、切换历史、朗读及运行节点。右下角 + 支持从任意列录入；行详情底部只保留「运行」，顶部「下一行」和「+」可保存当前草稿并继续录入，不触发 AI。关闭有内容的新草稿会自动保存，空草稿直接关闭。完整行为、架构、验证和限制见 [移动端说明](docs/mobile-view.md)。这些源码更改尚未包含在已发布的 v0.3.1 DMG 中。
 
-**局域网访问不等于跨设备同步**：工作簿仍保存在各浏览器的 localStorage。手机与电脑访问同一 Docker 服务，默认各有自己的工作簿；同一浏览器切换视图才会共享同一份数据。可用工作簿 JSON 手动迁移，当前没有服务端同步功能。
+**Docker 跨设备共享**：同一管理员登录后自动加载服务器 SQLite 中的工作簿、模型和 TTS 配置；密钥加密保存。旧浏览器有需要保留的数据时可迁移，迁移前自动下载工作簿备份；无需旧数据时可创建全新空白工作簿。原 Mac 开发版及公开 Sites 保持各自原有存储方式。详见[服务端存储、迁移与备份恢复](docs/server-storage.md)。
 
 ## 启动
 
 推荐 Docker 部署，在项目根目录执行：
 
 ```sh
+node scripts/init-master-key.mjs
 docker compose up -d --build
 ```
 
 访问 **http://127.0.0.1:3003**。首次构建会下载 Kokoro 模型与运行依赖。详见 [Docker 启动、登录、TTS、局域网与迁移说明](docker/README.md)。Docker 使用独立 Node 正式构建，原有 Mac 3002 开发服务和 Sites 构建继续保留。
 
-更新已部署的源码：先在网页导出 JSON 备份，再执行 `git pull --ff-only origin main` 和 `docker compose up -d --build`，最后刷新原访问地址。不要删除数据卷。浏览器保存的旧单表格会自动迁移为工作簿。
+Docker 首次打开时手动设置管理员用户名和密码；本机、局域网、蒲公英、fnOS 和 Tunnel 使用同一账户。所有业务 API 必须登录，浏览器登录保留 30 天。密码哈希、会话和工作簿位于持久化数据卷，原 Codex 登录保留。详见[管理员登录与手机验证](docs/admin-login.md)。
+
+更新已部署的源码：先按服务端存储说明备份数据库、账户及加密主密钥，再执行 `git pull --ff-only origin main` 和 `docker compose up -d --no-deps --build app`，最后刷新页面。首次升级先运行主密钥初始化脚本，不要删除数据卷。
 
 **可选 Mac 桌面测试版**：到 [GitHub Releases](https://github.com/zvision755/Chainflow-AI-Sheets/releases/tag/v0.3.1-macos-beta.1) 下载 v0.3.1-macos-beta.1 的 DMG，拖入应用程序后打开，无需终端、Docker 或 LaunchManager。Full MLX 版包含 Kokoro 模型，仅适用 M 系列 Mac；Lite Universal 版不含模型，提供第三方 TTS 接口。均要求 macOS 14+，未使用 Developer ID 签名或 Apple 公证，首次打开可能需在系统设置中选择「仍要打开」。新版安装包包含 v0.3.1 的本地模型、长文导入与拆句等更新。详见 [安装说明](macos/INSTALL.md) 和 [桌面版架构与构建](macos/README.md)。
 
