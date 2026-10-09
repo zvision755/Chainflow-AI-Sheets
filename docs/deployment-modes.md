@@ -100,4 +100,4 @@ node scripts/check-static-artifact.mjs
 
 Windows 若没有 Playwright 自带 Chromium，可先设置 `$env:PLAYWRIGHT_CHROMIUM_CHANNEL='chrome'` 使用已安装的 Chrome；CI 安装独立 Chromium。提供商参数、受限目标和流式协议集中在 `core/provider-transport.ts`，服务端的来源校验保留在 `server/proxy.ts`，静态版不会借用或伪造服务器 Origin。
 
-本机验收：类型检查、189 项单元测试、34 项跨模式浏览器回归、三个生产构建及静态产物检查通过；真实 Local Docker 另有 4 项桌面/手机视口测试通过。独立容器重启后工作簿和浏览器密钥恢复；火山日语 TTS 实际响应 200、`audio/mpeg`（6765 字节）。既有 Server 容器未重启，数据库只读 `integrity_check` 为 `ok`。真实 iPhone 的原生朗读音色/后台恢复，以及有效付费 AI/TTS 密钥的直连调用尚未验收，不能用模拟测试代替。
+本机验收：类型检查、190 项单元测试、34 项跨模式浏览器回归、三个生产构建及静态产物检查通过；真实 Local Docker 另有 4 项桌面/手机视口测试通过。独立容器重启后工作簿和浏览器密钥恢复；火山日语 TTS 实际响应 200、`audio/mpeg`（6765 字节）。既有 Server 容器未重启，数据库只读 `integrity_check` 为 `ok`。真实 iPhone 的原生朗读音色/后台恢复，以及有效付费 AI/TTS 密钥的直连调用尚未验收，不能用模拟测试代替。
