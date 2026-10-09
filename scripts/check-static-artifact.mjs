@@ -1,0 +1,3 @@
+import {readdir,readFile} from 'node:fs/promises';import {join} from 'node:path';
+async function check(dir){for(const item of await readdir(dir,{withFileTypes:true})){const path=join(dir,item.name);if(item.isDirectory()){await check(path);continue;}if(/(?:\.sqlite|\.env|auth\.json|master-key|\.pem|\.map)$/.test(item.name))throw Error('Private/unexpected artifact: '+path);if(/\.(js|html|json)$/.test(item.name)){const text=await readFile(path,'utf8');if(/-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----|github_pat_[A-Za-z0-9_]{30,}|ghp_[A-Za-z0-9]{30,}|sk-[A-Za-z0-9_-]{20,}/.test(text))throw Error('Credential-like literal in artifact: '+path);}}}
+await check('dist-static');console.log('Static artifact contains no private files or credential literals');

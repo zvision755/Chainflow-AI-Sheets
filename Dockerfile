@@ -1,5 +1,7 @@
 FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS build
 WORKDIR /app
+ARG CHAINFLOW_DEPLOYMENT=server
+ENV CHAINFLOW_DEPLOYMENT=$CHAINFLOW_DEPLOYMENT
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
@@ -24,6 +26,9 @@ FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35
 RUN apt-get -o Acquire::http::Proxy="$HTTP_PROXY" update \
     && apt-get -o Acquire::http::Proxy="$HTTP_PROXY" install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+ARG CHAINFLOW_VERSION=0.4.0
+ARG CHAINFLOW_DEPLOYMENT=server
+LABEL org.opencontainers.image.version=$CHAINFLOW_VERSION io.chainflow.deployment=$CHAINFLOW_DEPLOYMENT
 WORKDIR /app
 ENV NODE_ENV=production PORT=8080 NEXT_TELEMETRY_DISABLED=1 \
     CODEX_HOME=/data/codex CHAINFLOW_CODEX_BIN=/app/node_modules/.bin/codex

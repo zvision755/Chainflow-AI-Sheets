@@ -1,9 +1,11 @@
+import {staticDeployment} from '../core/deployment';
 let csrf = '';
 let enabled = false;
 export const authRequiredEvent = 'chainflow-auth-required';
 export function setSession(value: string, active: boolean) { csrf = value; enabled = active; }
 export function isAuthEnabled() { return enabled; }
 export async function sessionFetch(input: RequestInfo | URL, init?: RequestInit) {
+  if(staticDeployment){const {staticApi}=await import('./static-api');return staticApi(input,init,window.location.origin);}
   const headers = new Headers(init?.headers);
   if (enabled && !['GET', 'HEAD'].includes(init?.method ?? 'GET')) headers.set('X-Chainflow-Csrf', csrf);
   const response = await fetch(input, { ...init, headers, credentials: 'same-origin' });

@@ -1,0 +1,32 @@
+import {test,expect} from '@playwright/test';
+import {readFile} from 'node:fs/promises';
+import {blankSheet} from '../../core/workspace';
+import {defaultRunOptions} from '../../core/run-settings';
+test('Local saves workbook and keys, isolates browsers, and exports without credentials',async({page,browser})=>{
+ await page.goto('./');await expect(page.locator('.app-shell')).toHaveAttribute('data-ready','true');
+ await expect(page.getByRole('heading',{name:'登录',exact:true})).toHaveCount(0);
+ await page.getByLabel('表格名称',{exact:true}).fill('Local persistence');await page.getByLabel('第 1 行 输入',{exact:true}).fill('跨模式记录');
+ await page.waitForTimeout(500);await page.reload();await expect(page.locator('.app-shell')).toHaveAttribute('data-ready','true');await expect(page.getByLabel('第 1 行 输入',{exact:true})).toHaveValue('跨模式记录');
+ await page.getByRole('button',{name:'连接 API key',exact:true}).click();await page.getByLabel('API key',{exact:true}).fill('sk-local-automated-test-not-a-real-key');await page.getByRole('button',{name:'完成',exact:true}).click();
+ await page.reload();await expect(page.locator('.app-shell')).toHaveAttribute('data-ready','true');await expect(page.getByRole('button',{name:'已记住浏览器密钥',exact:true})).toBeVisible();
+ const data=await page.evaluate(async()=>{const db=await new Promise<IDBDatabase>((resolve,reject)=>{const r=indexedDB.open('chainflow-local-v1');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});const record=await new Promise<unknown>(resolve=>{const r=db.transaction('documents').objectStore('documents').get('workspace');r.onsuccess=()=>resolve(r.result);});db.close();return JSON.stringify(record);});
+ expect(data).toContain('跨模式记录');expect(data).not.toContain('sk-local');
+ await page.getByRole('button',{name:'配置 TTS',exact:true}).click();await page.getByLabel('TTS 提供方',{exact:true}).selectOption('external');await page.getByLabel('TTS API key',{exact:true}).fill('local-tts-test-only-key');await page.getByRole('button',{name:'保存配置',exact:true}).click();
+ await page.reload();await expect(page.locator('.app-shell')).toHaveAttribute('data-ready','true');await page.getByRole('button',{name:'配置 TTS',exact:true}).click();await expect(page.getByLabel('TTS API key',{exact:true})).toHaveValue('local-tts-test-only-key');await page.getByLabel('关闭 TTS 配置',{exact:true}).click();
+ const downloading=page.waitForEvent('download');await page.getByRole('button',{name:'导出 JSON',exact:true}).click();const downloaded=await downloading;const exported=await readFile((await downloaded.path())!,'utf8');expect(exported).toContain('跨模式记录');expect(exported).not.toContain('sk-local');expect(exported).not.toContain('local-tts-test-only-key');
+ const context=await browser.newContext();const other=await context.newPage();await other.goto(page.url());await expect(other.locator('.app-shell')).toHaveAttribute('data-ready','true');await expect(other.getByLabel('第 1 行 输入',{exact:true})).toHaveValue('');await context.close();
+ const choosing=page.waitForEvent('filechooser');await page.getByRole('button',{name:'导入 JSON',exact:true}).click();await (await choosing).setFiles((await downloaded.path())!);await expect(page.locator('.notice')).toContainText('已新增导入');await page.waitForTimeout(500);await page.reload();await expect(page.getByLabel('第 1 行 输入',{exact:true})).toHaveValue('跨模式记录');await expect(page.getByRole('button',{name:'连接 API key',exact:true})).toBeVisible();
+});
+test('shared AI editor runs through each transport and persists the final streaming result',async({page},info)=>{
+ const sheet=blankSheet('AI 跨模式');sheet.rows[0].cells.input.value='文本';sheet.columns[1].prompt='生成文本';
+ await page.addInitScript(({sheet,options})=>localStorage.setItem('chainflow-workspace-v1',JSON.stringify({version:1,activeId:'test',tables:[{id:'test',sheet,options}]})),{sheet,options:{...defaultRunOptions,dependencyDelayMs:0,autoRetry:false}});
+ const direct=info.project.name==='local-static';let called=0;
+ await page.route(direct?'https://api.openai.com/v1/responses':'**/api/generate',async route=>{called++;expect(route.request().headers().authorization).toBe('Bearer local-ai-test-only-key');const frames=direct?[{type:'response.output_text.delta',delta:'跨模式流式结果'},{type:'response.completed',response:{status:'completed',output:[{content:[{type:'output_text',text:'跨模式流式结果'}]}],usage:{input_tokens:2,output_tokens:3}}}]:[{type:'delta',delta:'跨模式流式结果'},{type:'done',result:{text:'跨模式流式结果',usage:{input:2,output:3}}}];await route.fulfill({headers:{'content-type':'text/event-stream','access-control-allow-origin':'*'},body:frames.map(frame=>'data: '+JSON.stringify(frame)+'\n\n').join('')});});
+ await page.goto('./');await expect(page.locator('.app-shell')).toHaveAttribute('data-ready','true');await page.getByRole('button',{name:'连接 API key',exact:true}).click();await page.getByLabel('API key',{exact:true}).fill('local-ai-test-only-key');await page.getByRole('button',{name:'完成',exact:true}).click();
+ await page.getByRole('button',{name:'运行全部',exact:true}).click();await page.getByRole('button',{name:'确认运行',exact:true}).click();await expect(page.getByLabel('第 1 行 生成结果',{exact:true})).toHaveValue('跨模式流式结果');await page.waitForTimeout(400);await page.reload();await expect(page.locator('.app-shell')).toHaveAttribute('data-ready','true');await expect(page.getByLabel('第 1 行 生成结果',{exact:true})).toHaveValue('跨模式流式结果');expect(called).toBe(1);
+});
+test('Local handles concurrent tabs with an explicit conflict instead of overwriting',async({page,context})=>{
+ await page.goto('./');await expect(page.locator('.app-shell')).toHaveAttribute('data-ready','true');const other=await context.newPage();await other.goto(page.url());await expect(other.locator('.app-shell')).toHaveAttribute('data-ready','true');
+ await page.getByLabel('第 1 行 输入',{exact:true}).fill('新版本');await page.waitForTimeout(500);await other.getByLabel('第 1 行 输入',{exact:true}).fill('旧标签修改');await expect(other.getByText(/另一标签页已有更新/)).toBeVisible();
+ await page.reload();await expect(page.locator('.app-shell')).toHaveAttribute('data-ready','true');await expect(page.getByLabel('第 1 行 输入',{exact:true})).toHaveValue('新版本');await other.close();
+});

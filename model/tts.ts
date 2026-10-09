@@ -1,6 +1,7 @@
 import type { SpokenLanguage, TtsSession } from '../core/tts';
 import { sessionFetch as fetch } from './session';
 export async function loadTtsVoices(url: string, signal: AbortSignal, apiKey = ''): Promise<string[]> {
+  if(url==='browser'){if(typeof speechSynthesis==='undefined')throw Error('此浏览器不支持原生朗读');return speechSynthesis.getVoices().map(voice=>voice.name);}
   const response = await fetch('/api/local-tts/voices', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(apiKey ? {Authorization: `Bearer ${apiKey}`} : {}) }, body: JSON.stringify({ url }), signal, cache: 'no-store' });
   const data = await response.json() as { voices: string[]; error?: { message: string } };
   if (!response.ok) throw new Error(data.error?.message ?? '无法连接 TTS 服务');
@@ -32,6 +33,7 @@ export class SpeechPlayer {
   private audio?: AudioHandle;
   private url?: string;
   private spoken?: { key: string; text: string; language: SpokenLanguage };
+  private native?:SpeechSynthesisUtterance;
   private dependencies: Dependencies;
   constructor(dependencies: Partial<Dependencies> = {}) {
     this.dependencies = { synthesize: synthesizeSpeech, audio: () => new Audio(), createUrl: blob => URL.createObjectURL(blob), revokeUrl: url => URL.revokeObjectURL(url), timeout: 100000, ...dependencies };
@@ -43,10 +45,18 @@ export class SpeechPlayer {
     if (this.audio) { this.audio.onended = null; this.audio.onerror = null; this.audio.pause(); this.audio.removeAttribute('src'); this.audio.load(); this.audio = undefined; }
     if (this.url) { this.dependencies.revokeUrl(this.url); this.url = undefined; }
   }
-  stop = () => { this.generation++; this.controller?.abort(); this.controller = undefined; this.releaseAudio(); this.spoken = undefined; this.update({ phase: 'idle' }); };
+  stop = () => { this.generation++; this.controller?.abort(); this.controller = undefined;if(this.native){this.native.onend=null;this.native.onerror=null;this.native=undefined;speechSynthesis.cancel();} this.releaseAudio(); this.spoken = undefined; this.update({ phase: 'idle' }); };
   cancelIfChanged(key: string | undefined, text?: string, language?: string) { if (this.spoken && (this.spoken.key !== key || this.spoken.text !== text || this.spoken.language !== language)) this.stop(); }
   async speak(key: string, text: string, language: SpokenLanguage, config: TtsSession) {
     this.stop(); const generation = this.generation;
+    if(config.provider==='browser'){
+      if(typeof speechSynthesis==='undefined'||typeof SpeechSynthesisUtterance==='undefined'){this.update({key,phase:'error',message:'此浏览器不支持原生朗读'});return;}
+      if(!text.trim()||text.length>4096){this.update({key,phase:'error',message:'朗读文字须为 1–4096 个字符'});return;}
+      const utterance=new SpeechSynthesisUtterance(text);this.native=utterance;this.spoken={key,text,language};utterance.lang={ja:'ja-JP',en:'en-US','en-gb':'en-GB',zh:'zh-CN'}[language];utterance.rate=config.speed;
+      utterance.onend=()=>{if(generation===this.generation){this.native=undefined;this.spoken=undefined;this.update({phase:'idle'});}};
+      utterance.onerror=()=>{if(generation===this.generation){this.native=undefined;this.spoken=undefined;this.update({key,phase:'error',message:'浏览器朗读失败，请检查系统语言音色或重试'});}};
+      this.update({key,phase:'playing'});try{speechSynthesis.speak(utterance);}catch{this.native=undefined;this.spoken=undefined;this.update({key,phase:'error',message:'浏览器无法开始朗读，请检查系统音色'});}return;
+    }
     const controller = new AbortController(); this.controller = controller; this.spoken = { key, text, language };
     this.update({ key, phase: 'loading' });
     let timedOut = false;

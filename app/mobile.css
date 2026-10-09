@@ -8,3 +8,4 @@
 @media(max-width:370px){.row-detail-header{padding-left:7px}.row-detail-title h2{font-size:15px}.row-detail-nav>button,.row-detail-nav>details>summary{width:34px}.row-card-heading>button,.row-card-actions>button,.row-card-menu summary{width:34px;min-width:34px}}
 .mobile-view .row-detail-footer{display:block}
 .mobile-status-details{position:relative;flex-shrink:0}.mobile-status-details summary{display:grid;place-items:center;width:32px;height:38px;cursor:pointer;list-style:none}.mobile-status-details summary::-webkit-details-marker{display:none}.mobile-status-popover{position:absolute;right:0;top:100%;z-index:7;width:max-content;max-width:min(250px,80vw);padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:white;box-shadow:0 8px 20px #18325425;font-size:12px;line-height:1.4;color:var(--ink);white-space:normal}
+.local-mode-notice{font-size:12px;line-height:1.5;color:#66748b;margin:0 0 12px;overflow-wrap:anywhere}

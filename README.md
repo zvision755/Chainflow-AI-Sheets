@@ -4,7 +4,7 @@
 
 **Docker 是当前主要维护版本**，同一项目可部署在 Mac OrbStack 或 Windows Docker Desktop，也可供可信局域网中的 iPad 等设备通过浏览器使用。Kokoro 在容器内使用 ONNX CPU，第三方 TTS API 仍可选。macOS DMG 测试版作为可选方案；其 Full 版使用 MLX。v0.3.1 桌面安装包单独发布为未签名测试版。
 
-当前源码版本：**v0.3.1**。完整功能变更、验证范围和更新步骤见 [更新记录](CHANGELOG.md)。
+当前源码版本：**v0.4.0**。完整功能变更、验证范围和更新步骤见 [更新记录](CHANGELOG.md)。
 
 正在开发的 **Mobile View** 与电脑版共享工作簿和运行引擎：宽度小于 768px 自动使用手机表格，菜单可选择「自动适配／手机版／电脑版」，偏好保存在当前浏览器。手机表格以紧凑行预览最多两行文字；点击任意格子可查看、编辑整行，复制全文、切换历史、朗读及运行节点。右下角 + 支持从任意列录入；行详情底部只保留「运行」，顶部「下一行」和「+」可保存当前草稿并继续录入，不触发 AI。关闭有内容的新草稿会自动保存，空草稿直接关闭。完整行为、架构、验证和限制见 [移动端说明](docs/mobile-view.md)。这些源码更改尚未包含在已发布的 v0.3.1 DMG 中。
 
@@ -114,6 +114,14 @@ OrbStack 通常会沿用 Mac 系统代理。如需指定代理，在项目 `.env
 6. 刷新保留表格与连接设置；未选择记住时不恢复密钥，中断中的任务恢复为已取消。当前页面更新前已备份原有提示词/结果，没有手动刷新用户页面。
 
 不要把密钥粘贴进聊天、终端命令、仓库文件或环境变量。应用不从本地文件自动读取 API key。
+
+## 三种部署模式（0.4.0）
+
+Server Docker 保留现有账号、SQLite 和跨设备共享。新增 Local Docker（无需登录、浏览器数据、无状态代理）及 Local Pages（无需 Docker/服务器、浏览器数据、API 直连需 CORS）。三个版本使用同一个表格 UI、工作流和移动端组件；main 发布由 Actions 构建与回归三个模式，再部署 Pages 和发行 Docker 镜像。
+
+Local Docker：`docker compose -f compose.local.yaml up -d --build`，打开 `http://127.0.0.1:3004/`。Local Pages：[打开静态版](https://zvision755.github.io/Chainflow-AI-Sheets/)。Local 默认禁用本地 Codex 订阅，API Agent 工作流保留；Pages 默认使用浏览器 TTS。Local 密钥存于浏览器，定期导出 JSON 备份；不会连接已有 Server 数据库。
+
+三版本差异、CORS 实测边界、备份、镜像版本与后续开发规则见 [部署文档](docs/deployment-modes.md)。
 
 ## 功能
 
