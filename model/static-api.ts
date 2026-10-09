@@ -4,13 +4,13 @@ import {externalTtsUrl,ttsRemoteHosts} from '../core/tts';
 export async function staticApi(input:RequestInfo|URL,init:RequestInit|undefined,base:string,fetcher:typeof fetch=fetch):Promise<Response>{
   const request=new Request(new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url,base),init);
   const path=new URL(request.url).pathname;
-  if(path==='/api/capabilities')return json({storage:false,codex:false,tts:true,builtinTts:false,runtime:'local-static',providers:['openai','deepseek','custom']});
+  if(path==='/api/capabilities')return json({storage:false,codex:false,tts:true,builtinTts:false,runtime:'web',providers:['openai','deepseek','custom']});
   if(path==='/api/auth/status')return json({enabled:false});
   if(path==='/api/generate'||path==='/api/models'){
     // A local Request envelope invokes shared validation/protocol handling. Only the reviewed provider target is fetched.
 
     const result=await providerRequest(request,path.endsWith('/models')?'models':'generate',fetcher,false);
-    if(!result.ok){const data=await result.clone().json().catch(()=>null) as {error?:{code?:string}}|null;if(data?.error?.code==='network')return json({error:{code:'cors_or_network',message:'浏览器无法直连此 API：请检查网络及提供商 CORS 支持。静态版没有代理；可改用 Local Docker。',retryable:false}},502);}
+    if(!result.ok){const data=await result.clone().json().catch(()=>null) as {error?:{code?:string}}|null;if(data?.error?.code==='network')return json({error:{code:'cors_or_network',message:'浏览器无法直连此 API：请检查网络及提供商 CORS 支持。静态版没有代理；可改用 Chainflow Server。',retryable:false}},502);}
     return result;
   }
   if(path==='/api/local-tts/speech'){
@@ -19,5 +19,5 @@ export async function staticApi(input:RequestInfo|URL,init:RequestInit|undefined
     const authorization=request.headers.get('authorization')??'';if(!/^Bearer [a-zA-Z0-9_.-]{1,300}$/.test(authorization))return json({error:{code:'missing_key',message:'请填写第三方 TTS API key'}},401);
     try{const response=await fetcher(data.url.replace(/\/$/,'')+'/audio/speech',{method:'POST',headers:{'Content-Type':'application/json',Authorization:authorization},body:JSON.stringify({model:data.model,input:data.input,voice:data.voice,speed:data.speed,response_format:'mp3'}),signal:request.signal,redirect:'error',credentials:'omit',cache:'no-store'});if(!response.ok){await response.body?.cancel();return json({error:{code:'tts_provider',message:'TTS 提供商拒绝请求，请检查密钥、模型与音色'}},response.status);}return response;}catch{return json({error:{code:'tts_cors',message:'浏览器无法直连 TTS，请检查 CORS 与网络，或改用浏览器原生朗读'}},502);}
   }
-  return json({error:{code:'static_unavailable',message:'此能力需要受保护的 Server 或 Local Docker，静态版不提供'}},404);
+  return json({error:{code:'static_unavailable',message:'此能力需要受保护的 Server，静态版不提供'}},404);
 }

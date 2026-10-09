@@ -5,5 +5,4 @@ async function run(file,args=[],env={}){
   if(code!==0)throw Error('Mode build failed: '+file);
 }
 await run('docker/build.mjs',[],{CHAINFLOW_DEPLOYMENT:'server',CHAINFLOW_BUILD_DIR:'dist-server'});
-await run('docker/build.mjs',[],{CHAINFLOW_DEPLOYMENT:'local-docker',CHAINFLOW_BUILD_DIR:'dist-local-docker'});
 await run('node_modules/vite/bin/vite.js',['build','--config','static/vite.config.ts']);

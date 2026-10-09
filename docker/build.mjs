@@ -6,6 +6,6 @@ await rm(out,{recursive:true,force:true});
 await (await createBuilder({configFile:'docker/vite.config.ts'})).buildApp();
 // Bundle only the container entry, retaining runtime packages as dependencies.
 const mode=process.env.CHAINFLOW_DEPLOYMENT??'server';
-if(!['server','local-docker'].includes(mode))throw Error('Invalid Docker deployment mode');
-await build({configFile:false,build:{ssr:mode==='local-docker'?'docker/local-server.ts':'docker/server.ts',outDir:out,emptyOutDir:false,rolldownOptions:{output:{entryFileNames:'runtime.mjs'}}}});
+if(mode!=='server')throw Error('Invalid Docker deployment mode');
+await build({configFile:false,build:{ssr:'docker/server.ts',outDir:out,emptyOutDir:false,rolldownOptions:{output:{entryFileNames:'runtime.mjs'}}}});
 if(mode==='server')await copyFile('docker/personal-backup.mjs',out+'/personal-backup.mjs');

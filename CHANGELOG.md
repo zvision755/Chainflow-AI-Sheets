@@ -1,5 +1,13 @@
 # 更新记录
 
+## 0.4.1 — Server / Web 双版本收敛（2026-10-10）
+
+- 正式版本改为 Chainflow Server 与 Chainflow Web，共享编辑器、工作流、移动 UI 与导入导出。取消 Local Docker 的独立 Compose、后端入口和镜像发布，保留既有 0.4.0 历史产物。
+- Web 的模型配置、TTS 配置和记忆 API Key 统一迁入 IndexedDB；旧 localStorage 配置先确认写入再清理，失败保留旧副本。配置按字段事务合并；保存未完成时关闭页面有提醒，TTS 保存窗口等待事务完成后关闭。
+- 构建、回归测试、GitHub Actions、README 与 AGENTS.md 均收敛为双版本。CI 同时验证 Server / Web，通过后部署 Web Pages，只发布 Server 镜像。
+- 原 Server 认证、SQLite 结构、Compose 和运行中容器保留。Web 不连接 Windows 数据库，无后端依赖，保留 JSON 备份及原生朗读，对无法静态运行的能力继续禁用并说明。
+- 本机类型检查、192 项单元测试、30 项桌面/手机及双版本界面测试、两种生产构建、静态产物检查和新增文件 Lint 通过。提交后由 GitHub Actions 验证并发布，失败不会覆盖已有 Web。
+
 ## 0.4.0 — 三种共享部署模式（2026-10-10）
 
 - 新增 Local Docker，无账号、无数据卷及数据库依赖，默认 3004，可与现有 Server 3003 共存；复用受限无状态 AI/TTS 代理，默认禁用 Codex 订阅桥接。
