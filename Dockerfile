@@ -26,7 +26,7 @@ FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35
 RUN apt-get -o Acquire::http::Proxy="$HTTP_PROXY" update \
     && apt-get -o Acquire::http::Proxy="$HTTP_PROXY" install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-ARG CHAINFLOW_VERSION=0.4.0
+ARG CHAINFLOW_VERSION=0.4.1
 ARG CHAINFLOW_DEPLOYMENT=server
 LABEL org.opencontainers.image.version=$CHAINFLOW_VERSION io.chainflow.deployment=$CHAINFLOW_DEPLOYMENT
 WORKDIR /app

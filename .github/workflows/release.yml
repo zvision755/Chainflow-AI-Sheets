@@ -1,4 +1,4 @@
-name: Test all modes and publish
+name: Test Server and Web and publish
 on:
   push:
     branches: [main]
@@ -30,12 +30,7 @@ jobs:
         env:
           CHAINFLOW_DEPLOYMENT: server
           CHAINFLOW_BUILD_DIR: dist-server
-      - name: Build Local Docker
-        run: npm run build:docker
-        env:
-          CHAINFLOW_DEPLOYMENT: local-docker
-          CHAINFLOW_BUILD_DIR: dist-local-docker
-      - name: Build Local Pages
+      - name: Build Chainflow Web
         run: npm run build:static
       - run: npx playwright install --with-deps chromium
       - name: Cross-mode editor and adapter regressions
@@ -44,7 +39,7 @@ jobs:
         run: node scripts/check-static-artifact.mjs
       - uses: actions/upload-artifact@v4
         with:
-          name: local-pages
+          name: chainflow-web
           path: dist-static
           if-no-files-found: error
   pages:
@@ -61,7 +56,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: local-pages
+          name: chainflow-web
           path: dist-static
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
@@ -76,10 +71,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [server, local-docker]
     steps:
       - uses: actions/checkout@v4
       - id: version
@@ -94,7 +85,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}-${{ matrix.mode }}
+          images: ghcr.io/${{ github.repository }}-server
           tags: |
             type=sha,format=long
             type=raw,value=latest,enable={{is_default_branch}}
@@ -106,5 +97,5 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            CHAINFLOW_DEPLOYMENT=${{ matrix.mode }}
+            CHAINFLOW_DEPLOYMENT=server
             CHAINFLOW_VERSION=${{ steps.version.outputs.value }}

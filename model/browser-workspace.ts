@@ -1,6 +1,6 @@
 import {serializeWorkspace,restoreWorkspace,type Workspace} from '../core/workspace';
 export type BrowserDocument={revision:number;workspace:Workspace};
-/** IndexedDB is authoritative in Local modes. Revision checks protect simultaneous tabs. */
+/** IndexedDB is authoritative in Web. Revision checks protect simultaneous tabs. */
 export class BrowserWorkspaceStore {
   private db?:Promise<IDBDatabase>;
   constructor(private factory:IDBFactory|undefined=undefined,private name='chainflow-local-v1'){}
@@ -26,6 +26,8 @@ export class BrowserWorkspaceStore {
     });
   }
   async close(){if(this.db)(await this.db).close();this.db=undefined;}
+  async loadSettings():Promise<Record<string,string>|null>{const db=await this.open();return new Promise((resolve,reject)=>{const tx=db.transaction('documents','readonly'),request=tx.objectStore('documents').get('settings');tx.oncomplete=()=>resolve(request.result??null);tx.onabort=()=>reject(Error('读取浏览器配置失败'));});}
+  async patchSettings(patch:Record<string,string|null>){const db=await this.open();return new Promise<void>((resolve,reject)=>{const tx=db.transaction('documents','readwrite'),store=tx.objectStore('documents'),request=store.get('settings');request.onsuccess=()=>{const next={...(request.result??{})};for(const [key,value]of Object.entries(patch)){if(value===null)delete next[key];else next[key]=value;}store.put(next,'settings');};tx.oncomplete=()=>resolve();tx.onabort=()=>reject(Error('浏览器配置保存失败，请检查存储权限和空间；当前配置仍在页面内存中'));});}
 }
 /** Serialize saves; only completed transactions are reported as saved. */
 export class BrowserWorkspaceSync {
