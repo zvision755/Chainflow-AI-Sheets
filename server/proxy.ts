@@ -29,7 +29,7 @@ export async function proxy(request:Request,operation:'generate'|'models',fetche
   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(key||`local:${destination.generate}`));const hash=Array.from(new Uint8Array(digest)).map(v=>v.toString(16).padStart(2,'0')).join('');
   let bucket=buckets.get(hash);if(!bucket){if(buckets.size>=1000)return fail('busy','服务繁忙，请稍后重试',429,true);bucket={active:0,count:0,expires:now+60000};buckets.set(hash,bucket);}
   if(bucket.expires<now){bucket.count=0;bucket.expires=now+60000;}
-  if(bucket.active>=3||totalActive>=12||bucket.count>=60)return fail('rate_limit','本站并发或频率达到上限，请稍后重试（每个密钥最多 3 个并发、每分钟 60 次）',429,true);
+  if(bucket.active>=10||totalActive>=12||bucket.count>=60)return fail('rate_limit','本站并发或频率达到上限，请稍后重试（每个密钥最多 10 个并发、每分钟 60 次）',429,true);
   bucket.active++;bucket.count++;totalActive++;
   const controller=new AbortController();let timeout=false;const timer=setTimeout(()=>{timeout=true;controller.abort();},110000);
   const cancel=()=>controller.abort();request.signal.addEventListener('abort',cancel,{once:true});if(request.signal.aborted)cancel();

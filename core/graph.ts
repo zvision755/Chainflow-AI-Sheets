@@ -16,13 +16,14 @@ export function descendants(columns: Column[], source:string, boundaries:Readonl
   function visit(id:string){for(const c of columns)if(c.sources.includes(id)&&!result.has(c.id)&&!boundaries.has(c.id)){result.add(c.id);visit(c.id);}}
   visit(source);return result;
 }
-export function plan(sheet:Sheet, targets:{row:string;column:string}[],force=false) {
+export function plan(sheet:Sheet, targets:{row:string;column:string}[],force=false,reuseExisting=false) {
   topological(sheet.columns);
   const tasks=new Map<string,{row:string;column:string}>();
   function add(rowId:string,colId:string,isTarget:boolean){
     const row=sheet.rows.find(r=>r.id===rowId),col=sheet.columns.find(c=>c.id===colId);if(!row||!col||col===sheet.columns[0])return;
     const cell=row.cells[colId];
-    if(cell.status==='done'&&!(force&&isTarget))return;
+    if(reuseExisting&&cell.value.trim())return;
+    if(cell.status==='done'&&!(force&&isTarget)&&!reuseExisting)return;
     col.sources.forEach(s=>add(rowId,s,false));tasks.set(`${rowId}:${colId}`,{row:rowId,column:colId});
   }
   targets.forEach(t=>add(t.row,t.column,true));return [...tasks.values()];

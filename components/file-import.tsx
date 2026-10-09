@@ -3,17 +3,21 @@
 import { useMemo, useRef, useState } from 'react';
 import { FileSpreadsheet, Upload, X } from 'lucide-react';
 import { readImportFile, type ImportedFile } from '../core/bulk-import';
+import { splitLongText } from '../core/text-segmenter';
+import {MAX_SHEET_ROWS} from '../core/types';
+import {TextSplitControls,useTextSplitSettings} from './text-split-controls';
 
-export function FileImport({ onClose, onInsert, disabled }: {
+export function FileImport({ onClose, onInsert, disabled, availableRows = MAX_SHEET_ROWS }: {
   onClose: () => void;
   onInsert: (values: string[]) => void;
-  disabled: boolean;
+  disabled: boolean; availableRows?:number;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [data, setData] = useState<ImportedFile|null>(null);
   const [sheetName, setSheetName] = useState('');
   const [header, setHeader] = useState(false);
-  const [txtMode, setTxtMode] = useState<'lines'|'paragraphs'>('lines');
+  const [txtMode, setTxtMode] = useState<'sentences'|'lines'|'paragraphs'>('sentences');
+  const {settings,setSettings,options}=useTextSplitSettings();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const sheet = data?.sheets.find(item => item.name === sheetName) ?? data?.sheets[0];
@@ -21,13 +25,14 @@ export function FileImport({ onClose, onInsert, disabled }: {
     if (!data) return [];
     if (data.kind === 'text') {
       const text = data.sheets[0].rows[0]?.[0] ?? '';
+      if(txtMode==='sentences')return splitLongText(text,options);
       const pieces = txtMode === 'paragraphs' ? text.split(/\n\s*\n+/) : text.split(/\r?\n/);
-      return pieces.map(piece => piece.trim()).filter(Boolean);
+      return pieces.map(piece=>piece.trim()).filter(Boolean);
     }
     const rows = sheet?.rows ?? [];
     return rows.slice(header ? 1 : 0).map(row => row[0]?.trim() ?? '').filter(Boolean);
-  }, [data, sheet, header, txtMode]);
-  const preview = values.slice(0, 5);
+  }, [data, sheet, header, txtMode, options]);
+  const preview = values.slice(0, 8);
 
   async function selectFile(file?: File) {
     if (!file) return;
@@ -53,13 +58,14 @@ export function FileImport({ onClose, onInsert, disabled }: {
         <label className="import-check"><input type="checkbox" checked={header} onChange={event=>setHeader(event.target.checked)}/>跳过首行表头</label>
         <small className="import-hint">仅读取所选工作表的第一列；其他列不会导入。</small>
       </>}
-      {data?.kind==='text'&&<label>TXT 条目分隔方式<select aria-label="TXT 条目分隔方式" value={txtMode} onChange={event=>setTxtMode(event.target.value as 'lines'|'paragraphs')}><option value="lines">每行一条</option><option value="paragraphs">空行分段（适合段落间空一行的文本）</option></select></label>}
+      {data?.kind==='text'&&<><label>TXT 条目分隔方式<select aria-label="TXT 条目分隔方式" value={txtMode} onChange={event=>setTxtMode(event.target.value as 'sentences'|'lines'|'paragraphs')}><option value="sentences">按标点拆句（默认）</option><option value="lines">每行一条</option><option value="paragraphs">空行分段（适合段落间空一行的文本）</option></select></label>{txtMode==="sentences"&&<TextSplitControls settings={settings} onChange={setSettings}/>}<small className="import-hint">拆句规则与粘贴长文相同；请核对缩写和小数等预览。</small></>}
+      {data&&values.length>availableRows&&<div className="cell-error" role="alert">本次条数超过整张表剩余容量，不会导入任何内容。请减少条数后再导入。</div>}
       {error&&<div className="cell-error" role="alert">{error}</div>}
       {data&&<>
-        <div className="article-count" aria-live="polite">识别到 <strong>{values.length}</strong> 条{data.kind==='table'?'非空第一列数据':'文本条目'} · 最多导入 500 行</div>
+        <div className="article-count" aria-live="polite">识别到 <strong>{values.length}</strong> 条{data.kind==='table'?'非空第一列数据':'文本条目'} · 整表上限 {MAX_SHEET_ROWS} 行 · 当前还可导入 {availableRows} 条（含可复用空行）</div>
         {preview.length>0&&<div className="article-preview"><strong>导入预览</strong><ol>{preview.map((value,index)=><li key={index}>{value}</li>)}</ol>{values.length>preview.length&&<small>还有 {values.length-preview.length} 条</small>}</div>}
       </>}
-      <div className="dialog-actions"><button className="button" onClick={onClose}>取消</button><button className="button primary" disabled={disabled||loading||values.length===0} onClick={()=>onInsert(values)}>填入 {values.length} 行</button></div>
+      <div className="dialog-actions"><button className="button" onClick={onClose}>取消</button><button className="button primary" disabled={disabled||loading||values.length===0||values.length>availableRows} onClick={()=>onInsert(values)}>填入 {values.length} 行</button></div>
     </section>
   </div>;
 }

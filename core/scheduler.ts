@@ -1,3 +1,4 @@
+import { MAX_SHEET_ROWS } from './types';
 import { descendants, plan, topological } from './graph';
 import { emptyCell, id, type Sheet, type Column, type Generate, type RunOptions, type Step } from './types';
 import { runApi } from '../modes/api';
@@ -7,7 +8,7 @@ import { repeatedResult } from './fresh-results';
 import { buildPrompts, promptContext, validatePromptTemplates } from './prompt-templates';
 import { appendResult, cellHistory, historyLimit, MAX_HISTORY_LIMIT, selectedHistoryIndex } from './result-history';
 type Task={row:string;column:string;revision:number;attempt:number;retryAt:number;options:RunOptions;batch:Batch;avoidResults?:string[];duplicateRetries?:number;variantUsage?:{input:number;output:number}};
-type Batch={steps:number;deadline:number;timer:ReturnType<typeof setTimeout>|null;columnCompletedAt:Map<string,number>;protectedSources:Map<string,Set<string>>};
+type Batch={steps:number;deadline:number;timer:ReturnType<typeof setTimeout>|null;columnCompletedAt:Map<string,number>;protectedSources:Map<string,Set<string>>;reuseExisting:boolean};
 export class Scheduler {
   sheet:Sheet;steps:Step[]=[];
   private queue=new Map<string,Task>();private active=new Map<string,{task:Task;controller:AbortController}>();
@@ -23,12 +24,13 @@ export class Scheduler {
   private key(row:string,col:string){return `${row}:${col}`;}
   private cell(row:string,col:string){return this.sheet.rows.find(r=>r.id===row)?.cells[col];}
   targets(scope:'all'|'row'|'column'|'cell',row?:string,col?:string){return this.sheet.rows.filter(r=>!row||r.id===row).flatMap(r=>this.sheet.columns.slice(1).filter(c=>!col||c.id===col).map(c=>({row:r.id,column:c.id})));}
-  estimate(targets:{row:string;column:string}[],force=false){return plan(this.sheet,targets,force).length;}
-  run(targets:{row:string;column:string}[],options:RunOptions,force=false,preserveCompleted:{row:string;column:string}[]=[]){
+  estimate(targets:{row:string;column:string}[],force=false,reuseExisting=false){return plan(this.sheet,targets,force,reuseExisting).length;}
+  run(targets:{row:string;column:string}[],options:RunOptions,force=false,preserveCompleted:{row:string;column:string}[]=[],reuseExisting=false){
     const protectedSources=new Map<string,Set<string>>();
     for(const source of preserveCompleted){const cell=this.cell(source.row,source.column);if(cell?.status==='done'&&cell.value.trim()){if(!protectedSources.has(source.row))protectedSources.set(source.row,new Set());protectedSources.get(source.row)!.add(source.column);}}
-    const todo=plan(this.sheet,targets,force);const batch:Batch={steps:0,deadline:Date.now()+options.totalTimeout,timer:null,columnCompletedAt:new Map(),protectedSources};
-    const limit={...options,autoRetry:options.autoRetry!==false,apiMaxRetries:Math.max(0,Math.min(3,options.apiMaxRetries??2)),retryDelayMs:Math.max(10,Math.min(30000,options.retryDelayMs??2000)),dependencyDelayMs:Math.max(0,Math.min(60000,options.dependencyDelayMs??500)),concurrency:Math.max(1,Math.min(3,options.concurrency)),maxRetries:Math.max(0,Math.min(2,options.maxRetries)),maxSteps:Math.max(1,Math.min(3000,options.maxSteps)),timeout:Math.max(1000,Math.min(120000,options.timeout))};
+    if(reuseExisting)for(const row of this.sheet.rows)protectedSources.set(row.id,new Set(this.sheet.columns.filter(column=>row.cells[column.id].value.trim()).map(column=>column.id)));
+    const todo=plan(this.sheet,targets,force,reuseExisting);const batch:Batch={steps:0,deadline:Date.now()+options.totalTimeout,timer:null,columnCompletedAt:new Map(),protectedSources,reuseExisting};
+    const limit={...options,autoRetry:options.autoRetry!==false,apiMaxRetries:Math.max(0,Math.min(5,options.apiMaxRetries??3)),retryDelayMs:Math.max(10,Math.min(30000,options.retryDelayMs??2000)),dependencyDelayMs:Math.max(0,Math.min(60000,options.dependencyDelayMs??500)),concurrency:Math.max(1,Math.min(10,options.concurrency)),maxRetries:Math.max(0,Math.min(2,options.maxRetries)),maxSteps:Math.max(1,Math.min(3000,options.maxSteps)),timeout:Math.max(1000,Math.min(120000,options.timeout))};
     for(const t of todo){const key=this.key(t.row,t.column);if(this.queue.has(key)||this.active.has(key))continue;
       const cell=this.cell(t.row,t.column)!,column=this.sheet.columns.find(c=>c.id===t.column)!;
       const avoidResults=force&&column.freshResults&&targets.some(target=>target.row===t.row&&target.column===t.column)&&cell.value.trim()?Array.from(new Set([...this.recentResults(t.row,t.column),cell.value])).slice(-5):undefined;
@@ -52,6 +54,20 @@ export class Scheduler {
   edit(row:string,col:string,value:string){const c=this.cell(row,col);if(!c||c.value===value)return;
     this.invalidate(row,new Set([col,...descendants(this.sheet.columns,col)]));c.value=value;c.status='done';this.emit();this.pump();
   }
+  clearColumn(col:string){
+    if(this.busy)throw Error('请先停止运行，等待计数回到 0 再清空列');
+    if(!this.sheet.columns.some(column=>column.id===col))throw Error('列不存在');
+    const affected=new Set([col,...descendants(this.sheet.columns,col)]);
+    for(const row of this.sheet.rows){this.invalidate(row.id,affected);const revision=row.cells[col].revision;row.cells[col]={...emptyCell(),revision};}
+    this.emit();
+  }
+  markColumnDone(col:string){
+    if(this.busy)throw Error('请先停止运行，等待计数回到 0');
+    if(!this.sheet.columns.some(column=>column.id===col))throw Error('列不存在');
+    let changed=0;
+    for(const row of this.sheet.rows){const cell=row.cells[col];if(cell.value.trim()&&(cell.status!=='done'||cell.error||cell.preview)){cell.status='done';delete cell.error;delete cell.preview;changed++;}}
+    if(changed)this.emit();return changed;
+  }
   configure(column:Column){
     if(!Number.isInteger(historyLimit(column))||historyLimit(column)<1||historyLimit(column)>MAX_HISTORY_LIMIT)throw new Error('历史结果保留次数须为 1–100 的整数');
     const existing=this.sheet.columns.find(c=>c.id===column.id);if(!existing)throw new Error('列不存在');
@@ -66,7 +82,7 @@ export class Scheduler {
   removeColumn(col:string){if(col===this.sheet.columns[0].id)throw new Error('输入列不能删除');if(this.sheet.columns.some(c=>c.sources.includes(col)))throw new Error('其他列仍依赖此列，请先修改它们的来源');this.sheet.rows.forEach(r=>{this.invalidate(r.id,new Set([col]));delete r.cells[col];});this.sheet.columns=this.sheet.columns.filter(c=>c.id!==col);this.emit();}
   moveColumn(col:string,delta:number){const cols=[...this.sheet.columns],i=cols.findIndex(c=>c.id===col),j=i+delta;if(i<1||j<1||j>=cols.length)return;[cols[i],cols[j]]=[cols[j],cols[i]];this.sheet.columns=cols;this.emit();}
   addRow(copy?:string,values:Record<string,string>={},afterRowId?:string){
-    if(this.sheet.rows.length>=500)throw Error('表格最多容纳 500 行');
+    if(this.sheet.rows.length>=MAX_SHEET_ROWS)throw Error(`表格最多容纳 ${MAX_SHEET_ROWS} 行`);
     if(Object.keys(values).some(key=>!this.sheet.columns.some(column=>column.id===key))||Object.values(values).some(value=>value.length>32000))throw Error('请检查录入列及内容长度');
     const anchor=afterRowId===undefined?this.sheet.rows.length-1:this.sheet.rows.findIndex(row=>row.id===afterRowId);
     if(afterRowId!==undefined&&anchor<0)throw Error('插入位置的原行已删除，请保留草稿并重新选择插入位置');
@@ -79,7 +95,7 @@ export class Scheduler {
   recentResults(row:string,column:string){const cell=this.cell(row,column),col=this.sheet.columns.find(c=>c.id===column);return cell&&col?cellHistory(cell,historyLimit(col)):[];}
   selectHistory(row:string,column:string,index:number){const cell=this.cell(row,column);if(!cell||['running','queued'].includes(cell.status))return;const history=this.recentResults(row,column);if(!Number.isInteger(index)||index<0||index>=history.length)return;if(cell.value!==history[index])this.invalidate(row,descendants(this.sheet.columns,column));cell.history=history;cell.historyIndex=index;cell.value=history[index];cell.revision++;cell.status='done';delete cell.error;delete cell.usage;delete cell.elapsed;delete cell.preview;this.emit();this.pump();}
   replace(sheet:Sheet){if(this.busy)throw new Error('请先停止运行，等待计数回到 0');this.sheet=sheet;this.steps=[];this.emit();}
-  setRows(rows:Sheet['rows']){if(this.busy)throw new Error('请先停止运行，等待计数回到 0');if(rows.length>500)throw new Error('表格最多容纳 500 行');this.sheet={...this.sheet,rows};this.emit();}
+  setRows(rows:Sheet['rows']){if(this.busy)throw new Error('请先停止运行，等待计数回到 0');if(rows.length>MAX_SHEET_ROWS)throw new Error(`表格最多容纳 ${MAX_SHEET_ROWS} 行`);this.sheet={...this.sheet,rows};this.emit();}
   private pump(){
     if(this.wakeTimer){clearTimeout(this.wakeTimer);this.wakeTimer=null;}
     let changed=false,nextWake=Infinity;
@@ -87,8 +103,9 @@ export class Scheduler {
       const row=this.sheet.rows.find(r=>r.id===task.row),col=this.sheet.columns.find(c=>c.id===task.column),cell=row?.cells[task.column];
       if(!row||!col||!cell||cell.revision!==task.revision){this.queue.delete(key);this.cleanupBatch(task.batch);changed=true;continue;}
       const sources=col.sources.map(s=>row.cells[s]);
-      if(sources.some(s=>s.status==='error'||s.status==='cancelled'||(!['done','running','queued'].includes(s.status)&&!this.queue.has(this.key(task.row,col.sources[sources.indexOf(s)]))))){cell.status='error';cell.error='上游未完成或失败，请先修正上游后重试';this.queue.delete(key);this.cleanupBatch(task.batch);changed=true;continue;}
-      if(sources.some(s=>s.status!=='done'))continue;
+      const reused=(s:typeof sources[number])=>task.batch.reuseExisting&&!!s.value.trim();
+      if(sources.some(s=>!reused(s)&&(s.status==='error'||s.status==='cancelled'||(!['done','running','queued'].includes(s.status)&&!this.queue.has(this.key(task.row,col.sources[sources.indexOf(s)])))))){cell.status='error';cell.error='上游未完成或失败，请先修正上游后重试';this.queue.delete(key);this.cleanupBatch(task.batch);changed=true;continue;}
+      if(sources.some(s=>s.status!=='done'&&!reused(s)))continue;
       if(Date.now()<task.retryAt){nextWake=Math.min(nextWake,task.retryAt);continue;}
       // A dependent column waits for all scheduled upstream cells in this run.
       const pending=[...this.queue.values(),...[...this.active.values()].map(a=>a.task)];
@@ -141,10 +158,10 @@ export class Scheduler {
         const retryable=timedOut||(!controller.signal.aborted&&error instanceof ModelError&&error.retryable);
         const delay=Math.min(60000,(task.options.retryDelayMs??2000)*2**task.attempt);
         const repeated=error instanceof ModelError&&error.code==='repeated_output';
-        if(task.options.autoRetry!==false&&retryable&&(!repeated||(task.duplicateRetries??0)<1)&&task.attempt<(task.options.apiMaxRetries??2)&&Date.now()+delay<task.batch.deadline){
+        if(task.options.autoRetry!==false&&retryable&&(!repeated||(task.duplicateRetries??0)<1)&&task.attempt<(task.options.apiMaxRetries??3)&&Date.now()+delay<task.batch.deadline){
           if(repeated)task.duplicateRetries=(task.duplicateRetries??0)+1;
-          task.attempt++;task.retryAt=Date.now()+delay;cell.status='queued';cell.error=`${message}；${delay/1000} 秒后自动重试（${task.attempt}/${task.options.apiMaxRetries??2}）`;this.queue.set(key,task);
-        }else{cell.status=controller.signal.aborted&&!timedOut?'cancelled':'error';cell.error=message+(repeated?'；重复结果最多额外尝试 1 次，已停止（受自动重试设置及总时限限制）':retryable&&task.options.autoRetry!==false?`；已停止自动重试（最多 ${task.options.apiMaxRetries??2} 次，受总时限限制）`:'');}
+          task.attempt++;task.retryAt=Date.now()+delay;cell.status='queued';cell.error=`${message}；${delay/1000} 秒后自动重试（${task.attempt}/${task.options.apiMaxRetries??3}）`;this.queue.set(key,task);
+        }else{cell.status=controller.signal.aborted&&!timedOut?'cancelled':'error';cell.error=message+(repeated?'；重复结果最多额外尝试 1 次，已停止（受自动重试设置及总时限限制）':retryable&&task.options.autoRetry!==false?`；已停止自动重试（最多 ${task.options.apiMaxRetries??3} 次，受总时限限制）`:'');}
         cell.elapsed=Date.now()-started;
       }
     }

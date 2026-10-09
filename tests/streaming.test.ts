@@ -68,7 +68,7 @@ test('premature EOF, truncation and streamed quota failures never complete; raw 
 });
 test('stream concurrency stays occupied through body consumption and cancel releases all slots',async()=>{
   const never=(async()=>new Response(new ReadableStream({start(c){c.enqueue(encoder.encode(frame({type:'response.output_text.delta',delta:'部分'})));}}),{headers:{'content-type':'text/event-stream'}})) as typeof fetch;
-  const responses=await Promise.all([proxy(req(),'generate',never),proxy(req(),'generate',never),proxy(req(),'generate',never)]);
+  const responses=await Promise.all(Array.from({length:10},()=>proxy(req(),'generate',never)));
   assert.equal((await proxy(req(),'generate',never)).status,429);await Promise.all(responses.map(r=>r.body!.cancel()));
   assert.equal((await proxy(req({stream:false}),'generate',(async()=>new Response(JSON.stringify({output_text:'ok'}))) as typeof fetch)).status,200);
 });

@@ -80,8 +80,8 @@ test('creation enforces row limits and accepts independent filled nodes atomical
   assert.deepEqual(rowWorkflow(sheet, rowId).targets.map(task => task.column), ['b', 'd']);
   assert.throws(() => engine.addRow(undefined, { missing: '文本' }), /录入列/);
   assert.throws(() => engine.addRow(undefined, { a: '字'.repeat(32001) }), /长度/);
-  sheet.rows = Array.from({ length: 500 }, (_, i) => ({ id: String(i), cells: { a: emptyCell() } }));
-  assert.throws(() => engine.addRow(), /500/);
+  sheet.rows = Array.from({ length: 2500 }, (_, i) => ({ id: String(i), cells: { a: emptyCell() } }));
+  assert.throws(() => engine.addRow(), /2500/);
 });
 test('upstream completion respects explicit manual boundaries during the same row run', async () => {
   const sheet = fixture(), engine = new Scheduler(sheet, async payload => {

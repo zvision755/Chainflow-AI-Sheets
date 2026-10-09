@@ -5,6 +5,7 @@ import type { TtsLanguage } from './tts';
 export type Column = { id: string; name: string; sources: string[]; prompt: string; userPrompt?: string; model: string; maxTokens: number; reasoning: 'none'|'low'|'medium'|'high'; check: boolean; minLength: number; containsSource: boolean; ttsLanguage?: TtsLanguage; width?: number; freshResults?: boolean; historyLimit?: number };
 export const MIN_COLUMN_WIDTH = 180;
 export const MAX_COLUMN_WIDTH = 1200;
+export const MAX_SHEET_ROWS = 2500;
 export const defaultColumnWidth = (index: number) => [180, 260, 520, 300][index] ?? 330;
 export const columnWidth = (column: Column, index: number) => column.width ?? defaultColumnWidth(index);
 export type Row = { id: string; cells: Record<string, Cell>; height?: number };

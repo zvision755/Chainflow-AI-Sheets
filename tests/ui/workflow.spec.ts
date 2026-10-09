@@ -6,8 +6,18 @@ test.beforeEach(async({page})=>{
  await page.route('**/api/capabilities',route=>route.fulfill({json:{codex:false,tts:true,builtinTts:true}}));
 });
 const key='sk-ui-test-session-memory-123456789';
+test('runtime budget fields accept typed limits and retain them after reload',async({page})=>{
+ await page.goto('/');await expect(page.locator('.app-shell')).toHaveAttribute('data-ready','true');
+ await page.getByLabel('并发',{exact:true}).fill('10');await page.getByLabel('并发',{exact:true}).press('Enter');
+ await page.getByLabel('失败自动重试',{exact:true}).check();await page.getByLabel('最多自动重试次数',{exact:true}).fill('5');await page.getByLabel('最多自动重试次数',{exact:true}).press('Enter');
+ await page.getByRole('button',{name:'Agent 模式',exact:true}).click();await page.getByLabel('整次运行时限',{exact:true}).fill('60');await page.getByLabel('整次运行时限',{exact:true}).press('Enter');
+ await page.reload();await expect(page.locator('.app-shell')).toHaveAttribute('data-ready','true');
+ await expect(page.getByLabel('并发',{exact:true})).toHaveValue('10');await expect(page.getByLabel('最多自动重试次数',{exact:true})).toHaveValue('5');await expect(page.getByLabel('整次运行时限',{exact:true})).toHaveValue('60');
+ await page.getByLabel('并发',{exact:true}).fill('11');await page.getByLabel('并发',{exact:true}).press('Enter');await expect(page.getByLabel('并发',{exact:true})).toHaveValue('10');
+ await page.getByLabel('整次运行时限',{exact:true}).fill('');await page.getByLabel('整次运行时限',{exact:true}).press('Enter');await expect(page.getByLabel('整次运行时限',{exact:true})).toHaveValue('60');
+});
 async function connect(page:any){await page.getByRole('button',{name:'连接 API key'}).click();await page.getByLabel('API key',{exact:true}).fill(key);await page.getByRole('button',{name:'完成',exact:true}).click();}
-async function run(page:any){await page.getByRole('button',{name:'运行全部',exact:true}).click();await expect(page.getByRole('dialog')).toContainText('个待执行单元格');await page.getByRole('button',{name:'确认运行'}).click();}
+async function run(page:any){await page.getByRole('button',{name:'运行全部',exact:true}).click();await expect(page.getByRole('dialog')).toContainText('个待执行单元格');await page.getByLabel('生成范围',{exact:true}).selectOption('pending');await page.getByRole('button',{name:'确认运行'}).click();}
 test('complete chain, no duplicate calls, edit/retry and refresh clears credential',async({page})=>{
  let calls:any[]=[];const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('**/api/generate',async route=>{const d=route.request().postDataJSON();calls.push(d);await new Promise(r=>setTimeout(r,100));await route.fulfill({json:{text:calls.length%2===1?'フレームは枠という意味です。':'老师解释：这句话说明フレーム表示框架。',usage:{input:10,output:20}}});});

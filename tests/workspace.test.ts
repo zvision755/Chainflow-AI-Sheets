@@ -13,7 +13,7 @@ test('multiple tables retain edits, histories, names, layout and independent run
  let workspace=initialWorkspace();const first=activeTable(workspace);first.sheet.name='业务数据';first.sheet.rows[0].cells.input.value='客户';first.sheet.rows[0].height=500;
  workspace=saveActive(workspace,first.sheet,{...defaultRunOptions,concurrency:3});
  workspace=addTable(workspace,savedExample(),savedExampleOptions());const secondId=workspace.activeId;
- assert.equal(workspace.tables.length,2);assert.equal(activeTable(workspace).sheet.name,'日语词汇学习');assert.equal(activeTable(workspace).options.concurrency,1);
+ assert.equal(workspace.tables.length,2);assert.equal(activeTable(workspace).sheet.name,'日语词汇学习');assert.equal(activeTable(workspace).options.concurrency,3);
  workspace=selectTable(workspace,first.id);assert.equal(activeTable(workspace).sheet.rows[0].cells.input.value,'客户');
  workspace=restoreWorkspace(serializeWorkspace(workspace),null,null);assert.equal(activeTable(workspace).sheet.name,'业务数据');assert.equal(activeTable(workspace).sheet.rows[0].height,500);assert.equal(activeTable(workspace).options.concurrency,3);
  workspace=selectTable(workspace,secondId);assert.equal(activeTable(workspace).sheet.rows[1].cells.explain.history?.length,2);
