@@ -1,6 +1,6 @@
 {
   "name": "chainflow-ai-sheets",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -22,7 +22,11 @@
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f --tail=50",
     "docker:login": "docker compose exec app /app/node_modules/.bin/codex -c cli_auth_credentials_store=\"file\" login --device-auth",
-    "build:mac": "node macos/build.mjs"
+    "build:mac": "node macos/build.mjs",
+    "build:modes": "node scripts/build-modes.mjs",
+    "build:static": "vite build --config static/vite.config.ts",
+    "preview:static": "vite preview --config static/vite.config.ts",
+    "test:ui:modes": "node scripts/test-ui-modes.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

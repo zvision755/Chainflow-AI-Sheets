@@ -1,0 +1,2 @@
+import {browserPersistence,staticDeployment} from '../core/deployment';
+export function LocalModeNotice(){return browserPersistence?<p className="local-mode-notice" role="note">{staticDeployment?'Local Pages':'Local Docker'} · 数据仅保存在此浏览器，请定期导出 JSON 备份。清理站点数据会丢失工作簿；浏览器中的密钥可被此设备用户及扩展读取。{staticDeployment?'AI 直连需要提供商允许浏览器跨域；浏览器朗读可用，火山 TTS 与本地 Codex 不提供。':'本地 Codex 已禁用；Agent 模式使用你填写的模型 API。'}</p>:null;}

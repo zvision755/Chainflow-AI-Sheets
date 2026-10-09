@@ -1,10 +1,11 @@
 export const ttsLanguages = { off: '不朗读', ja: '日语', en: '英语（美式）', 'en-gb': '英语（英式）', zh: '中文' } as const;
 export type TtsLanguage = keyof typeof ttsLanguages;
 export type SpokenLanguage = Exclude<TtsLanguage, 'off'>;
-export type TtsProvider = 'builtin' | 'volcengine' | 'external';
+export type TtsProvider = 'builtin' | 'volcengine' | 'external' | 'browser';
 export type TtsConfig = { provider?: TtsProvider; url: string; model: string; speed: number; voices: Record<SpokenLanguage, string> };
 export type TtsSession = TtsConfig & { apiKey?: string };
 export const TTS_STORAGE = 'chainflow-tts-v1';
+export const browserTtsConfig:TtsConfig={provider:'browser',url:'browser',model:'browser',speed:1,voices:{ja:'auto',en:'auto','en-gb':'auto',zh:'auto'}};
 export const defaultTtsConfig: TtsConfig = { provider: 'builtin', url: 'builtin', model: 'kokoro', speed: 1, voices: { ja: 'jf_alpha', en: 'af_heart', 'en-gb': 'bf_emma', zh: 'zf_xiaobei' } };
 export const externalTtsConfig: TtsConfig = { provider: 'external', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini-tts', speed: 1, voices: { ja: 'alloy', en: 'alloy', 'en-gb': 'alloy', zh: 'alloy' } };
 export const volcengineTtsConfig: TtsConfig = { provider: 'volcengine', url: 'volcengine-free', model: 'volcengine-tts', speed: 1, voices: { ja: 'jp_male_satoshi', en: 'en_male_adam', 'en-gb': 'tts.other.BV032_TOBI_streaming', zh: 'zh_male_xiaoming' } };
@@ -37,6 +38,7 @@ export function externalTtsUrl(value: string) {
 }
 export function validateTtsConfig(raw: unknown): TtsConfig {
   const value = raw as TtsConfig;
+  if(value?.provider==='browser'){if(value.url!=='browser'||value.model!=='browser'||!Number.isFinite(value.speed)||value.speed<0.25||value.speed>4)throw Error('浏览器朗读设置无效');return {...structuredClone(browserTtsConfig),speed:value.speed};}
   if (!value || typeof value.url !== 'string' || value.url.length > 500 || typeof value.model !== 'string' || !/^[a-zA-Z0-9._:/-]{1,100}$/.test(value.model) || !Number.isFinite(value.speed) || value.speed < 0.25 || value.speed > 4 || (value.provider !== undefined && !['builtin','volcengine','external'].includes(value.provider))) throw new Error('请检查 TTS 地址、模型名称与语速');
   const builtin = value.provider === 'builtin' || value.url === 'builtin';
   const volcengine = value.provider === 'volcengine' || value.url === 'volcengine-free';
