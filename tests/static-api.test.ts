@@ -13,6 +13,7 @@ test('Pages rejects arbitrary/private destinations and disables Codex, storage a
  for(const customUrl of ['http://127.0.0.1:1234/v1','https://evil.example/v1','https://169.254.169.254/v1'])assert.equal((await staticApi('/api/generate',init({...config,provider:'custom',customUrl}),origin,mock)).status,400);
  for(const path of ['/api/local-agent/generate','/api/workspace','/api/settings'])assert.equal((await staticApi(path,init({}),origin,mock)).status,404);
  assert.equal((await staticApi('/api/local-tts/speech',init({url:'volcengine-free'}),origin,mock)).status,400);assert.equal(calls,0);
+ for(const url of ['https://localhost:1234/v1','https://127.0.0.1:8880/v1'])assert.equal((await staticApi('/api/local-tts/speech',init({url,model:'tts-1',voice:'alloy',input:'测试',speed:1}),origin,mock)).status,400);assert.equal(calls,0);
 });
 test('Pages reports CORS/network without repeated automatic calls or raw credentials',async()=>{
  const result=await staticApi('/api/generate',init(config),origin,async()=>{throw Error('raw private static-test-only-key');});const data=await result.json() as {error:{code:string;retryable:boolean}};assert.equal(data.error.code,'cors_or_network');assert.equal(data.error.retryable,false);assert.ok(!JSON.stringify(data).includes('static-test-only-key'));
