@@ -98,7 +98,7 @@ export class CodexBridge {
   async login(){const transport=await this.connect();const result=await transport.request('account/login/start',{type:'chatgpt'});const url=new URL(result.authUrl);if(url.protocol!=='https:'||!['auth.openai.com','chatgpt.com'].includes(url.hostname)||url.username||url.password)throw new LocalAgentError('codex_login','登录服务返回了不支持的地址',502);return {authUrl:url.href};}
   async logout(){const transport=await this.connect();await transport.request('account/logout',{});this.models=[];this.catalogAt=0;}
   async generate(input:GenerateInput,signal:AbortSignal,onText?:(text:string)=>void):Promise<GenerateResult>{
-    if(this.active>=3)throw new LocalAgentError('codex_busy','本地 Codex 最多允许 3 个并发任务',429,true);
+    if(this.active>=10)throw new LocalAgentError('codex_busy','本地 Codex 最多允许 10 个并发任务',429,true);
     this.active++;
     let transport:CodexTransport|undefined,threadId:string|undefined,turnId:string|undefined;
     let remove=()=>{};let timer:ReturnType<typeof setTimeout>|undefined;let onAbort=()=>{};

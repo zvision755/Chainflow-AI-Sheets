@@ -1,3 +1,4 @@
+import { MAX_SHEET_ROWS } from '../core/types';
 import { ArrowDownToLine, ArrowUpToLine, Plus, Settings2 } from 'lucide-react';
 import { useLayoutEffect, useRef } from 'react';
 import { columnWidth, labels, type Column, type Sheet } from '../core/types';
@@ -61,7 +62,7 @@ export function MobileSheet({ sheet, onOpenRow, onAdd, onConfigure, onRunColumn,
     <div className="mobile-floating-actions" aria-label="表格快捷操作">
       <button aria-label="回到表格顶部" onClick={() => jump(false)}><ArrowUpToLine size={19}/></button>
       <button aria-label="跳转到表格底部" onClick={() => jump(true)}><ArrowDownToLine size={19}/></button>
-      <button className="mobile-add" aria-label="新增一行" disabled={sheet.rows.length >= 500} onClick={onAdd}><Plus size={24}/></button>
+      <button className="mobile-add" aria-label="新增一行" disabled={sheet.rows.length >= MAX_SHEET_ROWS} onClick={onAdd}><Plus size={24}/></button>
     </div>
   </>;
 }

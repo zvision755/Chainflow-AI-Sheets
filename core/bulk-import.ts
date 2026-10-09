@@ -1,13 +1,17 @@
-import { emptyCell, id, type Sheet } from './types';
+import { emptyCell, id, MAX_SHEET_ROWS, type Sheet } from './types';
+
+export function reusableImportRow(sheet:Sheet,row:Sheet['rows'][number]){
+  return sheet.columns.every(column=>{const cell=row.cells[column.id];return cell?.value===''&&!cell.history?.length&&!cell.preview&&!cell.error&&!cell.usage&&!cell.completedAt&&!['running','queued'].includes(cell.status);});
+}
+export function importCapacity(sheet:Sheet){return MAX_SHEET_ROWS-sheet.rows.length+sheet.rows.filter(row=>reusableImportRow(sheet,row)).length;}
 
 export function appendImportedRows(sheet: Sheet, values: string[]): Sheet {
   if (!values.length) throw new Error('文件中没有可导入的内容。');
   const inputId = sheet.columns[0]?.id;
   if (!inputId) throw new Error('当前表格没有第一列。');
-  const reusable = sheet.rows.length === 1 && sheet.rows[0].cells[inputId]?.value === '' &&
-    sheet.columns.slice(1).every(column => sheet.rows[0].cells[column.id]?.value === '');
-  const room = 500 - sheet.rows.length + (reusable ? 1 : 0);
-  if (values.length > room) throw new Error(`这张表最多容纳 500 行；当前可导入 ${room} 行，文件有 ${values.length} 条。`);
+  const reusable=sheet.rows.flatMap((row,index)=>reusableImportRow(sheet,row)?[index]:[]);
+  const room = importCapacity(sheet);
+  if (values.length > room) throw new Error(`整张表最多 ${MAX_SHEET_ROWS} 行；已有 ${sheet.rows.length} 行，其中 ${reusable.length} 行可复用，本次 ${values.length} 条超过剩余容量 ${room}。本次未导入任何内容，请拆分文件或清理表格后重试。`);
 
   const rows = sheet.rows.map(row => ({ ...row, cells: { ...row.cells } }));
   values.forEach((value, index) => {
@@ -16,10 +20,24 @@ export function appendImportedRows(sheet: Sheet, values: string[]): Sheet {
       column.id,
       columnIndex === 0 ? emptyCell(value, 'done') : emptyCell(),
     ]));
-    if (index === 0 && reusable) rows[0] = { ...rows[0], cells: { ...rows[0].cells, ...cells } };
+    if (index < reusable.length) {const target=reusable[index];rows[target] = { ...rows[target], cells };}
     else rows.push({ id: id(), cells });
   });
   return { ...sheet, rows };
+}
+
+export type ImportUndo = { changes: { before?: Sheet['rows'][number]; after: Sheet['rows'][number] }[] };
+export function prepareImportedRows(sheet: Sheet, values: string[]) {
+  const next=appendImportedRows(sheet,values), before=new Map(sheet.rows.map(row=>[row.id,row]));
+  const undo:ImportUndo={changes:next.rows.filter(row=>JSON.stringify(row)!==JSON.stringify(before.get(row.id))).map(row=>({before:before.has(row.id)?structuredClone(before.get(row.id)!):undefined,after:structuredClone(row)}))};
+  return {sheet:next,undo};
+}
+/** Remove only this batch; refuse to erase later edits or generated results. */
+export function undoImportedRows(sheet: Sheet, undo: ImportUndo): Sheet['rows'] {
+  const current=new Map(sheet.rows.map(row=>[row.id,row]));
+  for(const change of undo.changes)if(JSON.stringify(current.get(change.after.id))!==JSON.stringify(change.after))throw Error('导入的行已有编辑、生成或删除，无法安全撤销。请先导出备份，再清空目标列或删除相关行。');
+  const changes=new Map(undo.changes.map(change=>[change.after.id,change]));
+  return sheet.rows.flatMap(row=>{const change=changes.get(row.id);return change?(change.before?[structuredClone(change.before)]:[]):[row];});
 }
 
 export function parseDelimitedText(text: string, delimiter?: string): string[][] {
