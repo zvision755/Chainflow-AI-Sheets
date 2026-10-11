@@ -1,3 +1,4 @@
+import {desktopCell,editDesktopCell} from './desktop-cell';
 import {checkSourceTemplates} from './source-template-check';
 import { test, expect, type Page } from '@playwright/test';
 import { emptyCell, newColumn, type Sheet } from '../../core/types';
@@ -29,7 +30,7 @@ async function view(page: Page, label: string) {
   await page.getByLabel('应用菜单', { exact: true }).click();
   await page.getByRole('menuitemradio', { name: label, exact: true }).click();
 }
-test('mobile keeps portrait density and shows more capped columns on tablets without changing desktop widths', async ({ page }) => {
+test('mobile keeps adaptive compact widths while desktop uses equal fixed 440px columns', async ({ page }) => {
   const sheet = fixture(8);
   sheet.columns.forEach((column, index) => column.width = [180, 900, 520, 250][index]);
   sheet.rows.forEach(row => {
@@ -58,8 +59,8 @@ test('mobile keeps portrait density and shows more capped columns on tablets wit
   await page.setViewportSize({ width: 402, height: 874 });
   await page.screenshot({ path: 'outputs/mobile-equal-columns-402.png' });
   await view(page, '电脑版');
-  const desktopWidths = await page.locator('.data-col').evaluateAll(columns => columns.map(column => (column as HTMLElement).style.width));
-  expect(desktopWidths).toEqual(['180px', '900px', '520px', '250px']);
+  await expect.poll(async()=>page.locator('.data-col').evaluateAll(columns=>{const widths=columns.map(c=>c.getBoundingClientRect().width);return widths.every(w=>Math.abs(w-440)<1&&Math.abs(w-widths[0])<1);})).toBe(true);
+  await expect(page.getByRole('separator')).toHaveCount(0);
   await view(page, '手机版');
   await expect(page.locator('.mobile-table')).toBeVisible();
 });
@@ -135,7 +136,7 @@ test('closing details and switching UI during execution preserves tasks, content
   await page.getByRole('button', { name: '运行', exact: true }).click(); await expect.poll(() => calls.length).toBe(1);
   await page.getByRole('button', { name: '关闭行详情' }).click();
   await view(page, '电脑版'); await expect(page.locator('.app-shell')).toHaveAttribute('data-view', 'desktop');
-  await expect(page.getByLabel('第 1 行 原始内容', { exact: true })).toHaveValue('记录 1');
+  await expect(desktopCell(page,'第 1 行 原始内容')).toHaveText('记录 1');
   await expect(page.getByTestId('running-count')).toContainText('正在生成 1 个');
   await view(page, '手机版'); release();
   await expect(page.getByRole('button', { name: '查看第 1 行 摘要', exact: true })).toContainText('记录 1生成生成生成');
@@ -178,8 +179,8 @@ test('large table top/bottom navigation restores scroll and view changes do not 
   await page.getByRole('button', { name: '关闭行详情' }).click();
   expect(await scroller.evaluate(node => ({ top: node.scrollTop, left: node.scrollLeft }))).toEqual(before);
   await page.getByRole('button', { name: '回到表格顶部' }).click(); expect(await scroller.evaluate(node => node.scrollTop)).toBe(0);
-  await view(page, '电脑版'); expect(await page.locator('[data-row-id="row-1"]').evaluate(node => (node as HTMLElement).style.height)).toBe('650px');
-  await expect(page.locator('.row-resize-handle')).toHaveCount(100);
+  await view(page, '电脑版'); expect(await page.locator('[data-row-id="row-1"]').evaluate(node => (node as HTMLElement).style.height)).toBe('168px');
+  await expect(page.locator('.row-resize-handle,.column-resize-handle')).toHaveCount(0);
 });
 test('double submission creates one record; API error and retry settle correctly without losing the manual start', async ({ page }) => {
   let fail = true, calls = 0;
@@ -215,7 +216,7 @@ test('streaming text stays live through closing the modal and switching views, w
   await page.getByLabel('填写 解读', { exact: true }).fill('从 C 开始'); await page.getByRole('button', { name: '运行', exact: true }).click();
   await expect(page.locator('[data-column-id="d"] .row-card-text')).toHaveText('正在逐字生成');
   await page.getByRole('button', { name: '关闭行详情' }).click(); await view(page, '电脑版');
-  await expect(page.getByLabel('第 1 行 摘要', { exact: true })).toHaveValue('正在逐字生成');
+  await expect(desktopCell(page,'第 1 行 摘要')).toHaveText('正在逐字生成');
   await view(page, '手机版'); await page.getByRole('button', { name: '查看第 1 行 摘要', exact: true }).click();
   await expect(page.locator('[data-column-id="d"] .row-card-text')).toHaveText('正在逐字生成');
   await page.evaluate(() => (window as any).__finishStream());

@@ -1,0 +1,5 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {overviewColumnWidth,DESKTOP_ROW_HEIGHT} from '../core/overview-layout';
+test('shared overview column widths cap at 220 and rows have a fixed estimate',()=>{assert.equal(overviewColumnWidth(390,28),176);assert.equal(overviewColumnWidth(1024,28),220);assert.equal(overviewColumnWidth(1400,64),220);assert.equal(DESKTOP_ROW_HEIGHT,168);});
+
+import {parseSheet,serialize} from '../core/storage';import {example} from '../core/types';
+test('legacy JSON dimensions are ignored even when invalid, while content IDs and history survive',()=>{const sheet=example();const raw=JSON.parse(serialize(sheet));raw.columns[0].width='old-width';raw.rows[0].height=999999;const saved=parseSheet(raw);assert.equal(saved.columns[0].width,undefined);assert.equal(saved.rows[0].height,undefined);assert.equal(saved.rows[0].id,sheet.rows[0].id);assert.equal(saved.rows[0].cells.input.value,sheet.rows[0].cells.input.value);assert.ok(!serialize(saved).includes('"width"'));assert.ok(!serialize(saved).includes('"height"'));});

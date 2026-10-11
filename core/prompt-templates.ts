@@ -1,3 +1,4 @@
+import {cellText} from './markdown';
 import { ModelError } from '../model/client';
 import { id, type Column, type Sheet } from './types';
 import { cellHistory, historyLimit } from './result-history';
@@ -58,12 +59,13 @@ export function validatePromptTemplates(column:Column,sheet?:Sheet) {
 export function promptContext(sheet:Sheet,rowId:string,column:Column,history:string[]=[],now=new Date(),requestId:string=id()):PromptContext {
   const index=sheet.rows.findIndex(row=>row.id===rowId),row=sheet.rows[index];
   if(!row)throw new ModelError('预览行不存在，请选择一行','prompt_row');
-  const sourceValues=column.sources.map(source=>row.cells[source]?.value??'');
   for(const source of column.sources)if(!sheet.columns.some(c=>c.id===source)||!Object.hasOwn(row.cells,source))throw new ModelError('来源列或格子不存在，请在列设置中重新选择来源','prompt_template');
+  const sourceValues=column.sources.map(source=>cellText(sheet.columns.find(c=>c.id===source)!,row.cells[source]?.value??''));
   const text=column.sources.length===1?sourceValues[0]:'';
   const cell=row.cells[column.id];
   const saved=cell?cellHistory({...cell,history:history.length?history:cell.history},historyLimit(column)):[];
-  const recent=saved.slice(-5);
+  const readable=saved.map(value=>cellText(column,value));
+  const recent=readable.slice(-5);
   const excerpts:string[]=[];
   for(const value of [...recent].reverse()){
     let excerpt=value;
@@ -71,7 +73,7 @@ export function promptContext(sheet:Sheet,rowId:string,column:Column,history:str
     if(!excerpt)break;
     excerpts.unshift(excerpt);
   }
-  return {...Object.fromEntries(column.sources.map((source,i)=>[`source:${source}`,sourceValues[i]])),text:text??'',existing_result:saved.map((value,index)=>`${index+1}. ${value}`).join('\n\n'),recent_results:JSON.stringify(excerpts),timestamp:now.toISOString().replace(/\.\d{3}Z$/,'Z'),request_id:requestId,row_number:String(index+1),column_name:column.name};
+  return {...Object.fromEntries(column.sources.map((source,i)=>[`source:${source}`,sourceValues[i]])),text:text??'',existing_result:readable.map((value,index)=>`${index+1}. ${value}`).join('\n\n'),recent_results:JSON.stringify(excerpts),timestamp:now.toISOString().replace(/\.\d{3}Z$/,'Z'),request_id:requestId,row_number:String(index+1),column_name:column.name};
 }
 export function expandPrompt(template:string,context:PromptContext,limit:number,field:string):string {
   // One pass only: braces in source data must never become executable templates.

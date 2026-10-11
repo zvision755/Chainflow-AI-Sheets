@@ -1,3 +1,4 @@
+import {cellText} from './markdown';
 import { MAX_SHEET_ROWS } from './types';
 import { descendants, plan, topological } from './graph';
 import { emptyCell, id, type Sheet, type Column, type Generate, type RunOptions, type Step } from './types';
@@ -74,7 +75,8 @@ export class Scheduler {
     const columns=this.sheet.columns.map(c=>c.id===column.id?column:c);topological(columns);
     if(column.sources.length)validatePromptTemplates(column,this.sheet);
     const changed=['sources','prompt','userPrompt','model','maxTokens','reasoning'].some(k=>JSON.stringify(existing[k as keyof Column])!==JSON.stringify(column[k as keyof Column]));
-    this.sheet.columns=columns;if(historyLimit(existing)!==historyLimit(column))for(const row of this.sheet.rows){const cell=row.cells[column.id];const values=cellHistory(cell,MAX_HISTORY_LIMIT).slice(-historyLimit(column));if(values.length&&!values.includes(cell.value)){cell.value=values.at(-1)!;this.invalidate(row.id,descendants(columns,column.id));}cell.history=values;cell.historyIndex=selectedHistoryIndex({...cell,historyIndex:undefined},values);}if(changed)this.sheet.rows.forEach(r=>{this.invalidate(r.id,new Set([column.id,...descendants(columns,column.id)]));if(!column.sources.length)r.cells[column.id].status='done';});this.emit();this.pump();
+    const displayChanged=(existing.displayMode??'plain')!==(column.displayMode??'plain');
+    this.sheet.columns=columns;if(displayChanged)this.sheet.rows.forEach(r=>this.invalidate(r.id,descendants(columns,column.id)));if(historyLimit(existing)!==historyLimit(column))for(const row of this.sheet.rows){const cell=row.cells[column.id];const values=cellHistory(cell,MAX_HISTORY_LIMIT).slice(-historyLimit(column));if(values.length&&!values.includes(cell.value)){cell.value=values.at(-1)!;this.invalidate(row.id,descendants(columns,column.id));}cell.history=values;cell.historyIndex=selectedHistoryIndex({...cell,historyIndex:undefined},values);}if(changed)this.sheet.rows.forEach(r=>{this.invalidate(r.id,new Set([column.id,...descendants(columns,column.id)]));if(!column.sources.length)r.cells[column.id].status='done';});this.emit();this.pump();
   }
   invalidateGeneratedResults(){if(this.busy)throw new Error('请先停止运行再切换 Agent 模型');const generated=new Set(this.sheet.columns.filter(c=>c.sources.length>0).map(c=>c.id));this.sheet.rows.forEach(row=>this.invalidate(row.id,generated));this.emit();}
   addColumn(column:Column){const columns=[...this.sheet.columns,column];topological(columns);this.sheet.columns=columns;this.sheet.rows.forEach(r=>r.cells[column.id]=emptyCell());this.emit();}
@@ -119,7 +121,7 @@ export class Scheduler {
     if(changed)this.emit();
   }
   private async execute(key:string,task:Task,col:Column,cells:Sheet['rows'][number]['cells'],controller:AbortController){
-    const started=Date.now(),sourceValues=col.sources.map(s=>cells[s].value),input=col.sources.length===1?sourceValues[0]:col.sources.map((s,i)=>`[${this.sheet.columns.find(c=>c.id===s)?.name}]\n${sourceValues[i]}`).join('\n\n');
+    const started=Date.now(),sourceValues=col.sources.map(s=>cellText(this.sheet.columns.find(c=>c.id===s)!,cells[s].value)),input=col.sources.length===1?sourceValues[0]:col.sources.map((s,i)=>`[${this.sheet.columns.find(c=>c.id===s)?.name}]\n${sourceValues[i]}`).join('\n\n');
     let timedOut=false;const timeout=setTimeout(()=>{timedOut=true;controller.abort();},task.options.timeout);
     const record=async(phase:string,fn:()=>ReturnType<Generate>)=>{
       const step:Step={model:task.options.mode==='agent'&&task.options.agentBackend==='codex'?task.options.agentModel??'gpt-6-luna':col.model,backend:task.options.mode==='agent'?task.options.agentBackend??'api':'api',id:id(),row:task.row,column:col.name,phase,state:'running',started:Date.now()};this.steps=[...this.steps.slice(-299),step];this.emit();

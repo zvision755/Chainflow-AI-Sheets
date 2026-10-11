@@ -15,7 +15,7 @@ test('approved browser example restores prompts, layout, history and six complet
  assert.equal(sheet.columns[1].prompt,'给这个单词提供一个词典风格的日语例句，难度在n3-n2左右，只输出日语例句即可，不必输出任何多余字样');
  assert.match(sheet.columns[1].userPrompt!,/已有结果：{{existing_result}}/);assert.equal(sheet.columns[2].userPrompt,'{{text}}');
  assert.match(sheet.columns[2].prompt,/零基础中文母语学习者/);
- assert.deepEqual(sheet.columns.map(c=>c.width),[180,260,520]);assert.deepEqual(sheet.columns.map(c=>c.historyLimit),[10,10,10]);
+ assert.deepEqual(sheet.columns.map(c=>c.width),[undefined,undefined,undefined]);assert.deepEqual(sheet.columns.map(c=>c.historyLimit),[10,10,10]);
  assert.equal(sheet.columns[2].maxTokens,4096);assert.deepEqual(sheet.columns.map(c=>c.ttsLanguage),['ja','ja','off']);
  assert.match(sheet.rows[0].cells.teacher.value,/I had someone repair the frame/);
  assert.match(sheet.rows[2].cells.teacher.value,/I couldn’t fix it even after reading/);

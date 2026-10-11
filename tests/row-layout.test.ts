@@ -15,10 +15,10 @@ test('output rows grow past four wrapped lines and stop auto-growing at twelve',
   assert.ok(wrappedLineCount('短句\n第二行', 300) >= 2);
 });
 
-test('manual row height survives local and JSON persistence, and can return to automatic height', () => {
+test('legacy manual dimensions are ignored when restoring JSON without changing content', () => {
   const sheet = example(), engine = new Scheduler(sheet, async () => { throw Error('不应调用'); });
   engine.setRowHeight('row-1', 520);
-  assert.equal(parseSheet(JSON.parse(serialize(sheet))).rows[0].height, 520);
+  assert.equal(parseSheet(JSON.parse(serialize(sheet))).rows[0].height, undefined);
   engine.setRowHeight('row-1', null);
   assert.equal(sheet.rows[0].height, undefined);
   assert.equal(sheet.rows[0].cells.input.value, 'フレーム');

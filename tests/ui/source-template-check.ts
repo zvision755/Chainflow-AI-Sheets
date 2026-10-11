@@ -1,3 +1,4 @@
+import {checkMarkdown} from './markdown-check';
 import {expect,type Page} from '@playwright/test';
 import {emptyCell,newColumn,type Sheet} from '../../core/types';
 
@@ -31,4 +32,5 @@ export async function checkSourceTemplates(page:Page){
  await page.getByRole('button',{name:'语境释义',exact:true}).click();
  await expect(page.getByLabel('用户提示词',{exact:true})).toHaveValue('语境：{{source:A}}\n需要解释的单词：{{source:C}}');
  await page.getByLabel('关闭列配置',{exact:true}).click();
+ await checkMarkdown(page);
 }

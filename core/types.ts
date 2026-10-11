@@ -2,7 +2,7 @@ export type Status = 'idle' | 'queued' | 'running' | 'done' | 'error' | 'cancell
 export type Cell = { value: string; status: Status; revision: number; error?: string; elapsed?: number; usage?: Usage; completedAt?: number; preview?: string; history?: string[]; historyIndex?: number };
 export type Usage = { input: number; output: number };
 import type { TtsLanguage } from './tts';
-export type Column = { id: string; name: string; sources: string[]; prompt: string; userPrompt?: string; model: string; maxTokens: number; reasoning: 'none'|'low'|'medium'|'high'; check: boolean; minLength: number; containsSource: boolean; ttsLanguage?: TtsLanguage; width?: number; freshResults?: boolean; historyLimit?: number };
+export type Column = { id: string; name: string; sources: string[]; prompt: string; userPrompt?: string; model: string; maxTokens: number; reasoning: 'none'|'low'|'medium'|'high'; check: boolean; minLength: number; containsSource: boolean; ttsLanguage?: TtsLanguage; width?: number; freshResults?: boolean; historyLimit?: number; displayMode?: 'plain'|'markdown' };
 export const MIN_COLUMN_WIDTH = 180;
 export const MAX_COLUMN_WIDTH = 1200;
 export const MAX_SHEET_ROWS = 2500;

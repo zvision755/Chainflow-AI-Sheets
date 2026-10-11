@@ -31,3 +31,46 @@
 .sync-warning button { border: 1px solid currentColor; border-radius: 6px; padding: 5px 8px; background: transparent; }
 
 .prompt-source-warning{padding:12px;margin:12px 0;border:2px solid #d18b18;border-radius:8px;background:#fff7df;color:#704800;font-size:14px;overflow-wrap:anywhere}.prompt-source-warning p{margin:6px 0 0}.template-chips button:disabled{opacity:.45;cursor:not-allowed}
+.markdown-content {white-space:normal;overflow-wrap:anywhere;line-height:1.65;min-width:0;font-size:inherit;}
+.markdown-content > :first-child {margin-top:0;}
+.markdown-content > :last-child {margin-bottom:0;}
+.markdown-content p,.markdown-content ul,.markdown-content ol,.markdown-content blockquote,.markdown-content pre {margin:.55em 0;}
+.markdown-content ul,.markdown-content ol {padding-left:1.5em;list-style:revert;}
+.markdown-content h1,.markdown-content h2,.markdown-content h3,.markdown-content h4 {font-weight:650;line-height:1.4;margin:.7em 0 .35em;}
+.markdown-content h1 {font-size:1.3em;}.markdown-content h2 {font-size:1.2em;}.markdown-content h3 {font-size:1.1em;}
+.markdown-content blockquote {border-left:3px solid #94a3b8;padding-left:.7em;color:#475569;}
+.markdown-content code {background:#f1f5f9;border-radius:3px;padding:0 .2em;font-size:.9em;}
+.markdown-content pre {overflow-x:auto;background:#f1f5f9;padding:.6em;border-radius:6px;white-space:pre;}
+.markdown-content pre code {padding:0;}
+.markdown-content a {color:#2563eb;text-decoration:underline;}
+.markdown-table-scroll {overflow-x:auto;max-width:100%;}
+.markdown-content table {width:max-content;min-width:100%;border-collapse:collapse;table-layout:auto;}
+.markdown-content th,.markdown-content td {padding:.35em .6em;border:1px solid #cbd5e1;position:static;min-width:80px;}
+/* Overview never renders Markdown or creates per-cell scroll containers. */
+.desktop-table-scroll {overflow-x:auto;overflow-anchor:none;}
+.desktop-table-scroll tbody tr[data-row-id] {height:168px;}
+.desktop-table-scroll tbody td {vertical-align:top;padding:0;}
+.desktop-cell {display:flex;align-items:flex-start;justify-content:flex-start;width:100%;height:112px;padding:8px 12px;text-align:left;border-radius:0;overflow:hidden;}
+.desktop-cell-preview {width:100%;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;line-height:24px;max-height:96px;}
+.desktop-cell-preview.placeholder {color:var(--muted);}
+.desktop-cell-actions {height:55px;display:flex;flex-direction:column;gap:2px;padding:2px 12px;}
+.desktop-cell-actions .cell-footer {display:flex;align-items:center;gap:8px;min-height:30px;padding:0;flex-wrap:nowrap;}
+.desktop-cell-actions .cell-copy,.desktop-cell-actions .cell-run {margin-left:0;}
+.desktop-cell-actions button {min-width:30px;min-height:30px;padding:6px;font-size:12px;}
+.desktop-cell-actions .cell-history {display:flex;align-items:center;gap:6px;height:26px;margin:0 0 0 auto;font-size:12px;}
+.desktop-cell-actions .cell-history button {min-width:26px;min-height:26px;padding:4px;}
+.desktop-cell-actions .input-caption {display:none;}
+.desktop-cell-actions .cell-error,.desktop-cell-actions .retry-note {overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin:0;padding:0;font-size:11px;line-height:16px;}
+.virtual-row-spacer,.virtual-row-spacer td {padding:0!important;border:0!important;line-height:0;}
+.desktop-row-navigation {position:fixed;right:24px;bottom:20px;z-index:20;display:flex;gap:8px;padding:8px;border:1px solid var(--line);border-radius:10px;background:white;box-shadow:0 2px 12px #0002;}
+
+
+.desktop-table-scroll td.row-number {padding-top:8px;}
+.desktop-table-scroll .row-actions {gap:6px;margin-top:4px;}
+.desktop-table-scroll .row-actions button {width:32px;height:28px;padding:6px;}
+
+.desktop-column-info {display:flex;align-items:center;gap:10px;margin-top:8px;min-width:0;}
+.desktop-column-info .column-source {flex:1;min-width:0;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.desktop-column-info .column-meta {display:flex;align-items:center;gap:8px;margin:0;flex-shrink:0;}
+.desktop-column-info .column-meta span {max-width:130px;}
+.desktop-table-scroll .column-tts {margin-top:8px;}

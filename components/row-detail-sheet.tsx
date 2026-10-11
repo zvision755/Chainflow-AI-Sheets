@@ -1,4 +1,6 @@
 'use client';
+import {MarkdownContent} from './markdown-content';
+
 import { MAX_SHEET_ROWS } from '../core/types';
 'use client';
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Play, Plus, Save, Square, Trash2, X } from 'lucide-react';
@@ -161,7 +163,7 @@ export function RowDetailSheet({ engine, selection, message, revision, suspended
               </button>}
             </div>
             {isNew || editing.has(column.id) ? <TextEditor label={`填写 ${column.name}`} value={text} onChange={value => edit(column, value)} onFocus={() => { onInputColumn(column.id); content.current?.querySelector(`[data-column-id="${column.id}"]`)?.scrollIntoView({ block: 'nearest' }); }}/>
-              : <div className={'row-card-text' + (!text ? ' placeholder' : '')}>{text || '尚无内容，点击编辑填写'}</div>}
+              : <div className={'row-card-text' + (!text ? ' placeholder' : '')}>{text ? column.displayMode==='markdown'?<MarkdownContent text={text}/>:text : '尚无内容，点击编辑填写'}</div>}
             {!isNew && row && <CompactCellFeedback row={row} column={column} speech={actions.speech}/>}
             {!isNew && editing.has(column.id) && <small className="row-autosave">修改即时保存；上游改动会让下游需要更新。</small>}
           </article>;

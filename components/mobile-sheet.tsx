@@ -1,3 +1,5 @@
+import {overviewColumnWidth} from '../core/overview-layout';
+import {cellText} from '../core/markdown';
 import { MAX_SHEET_ROWS } from '../core/types';
 import { ArrowDownToLine, ArrowUpToLine, Plus, Settings2 } from 'lucide-react';
 import { useLayoutEffect, useRef, useState } from 'react';
@@ -33,7 +35,7 @@ export function MobileSheet({ sheet, onOpenRow, onAdd, onConfigure, onRunColumn,
   // Mobile widths are presentation-only. Narrow screens retain two columns and
   // a 5% hint; wider screens show more columns rather than stretching each one.
   const numberWidth = 28;
-  const dataWidth = availableWidth ? Math.min(220, Math.max(1, Math.floor((availableWidth - numberWidth) / 2.05))) : 160;
+  const dataWidth = overviewColumnWidth(availableWidth,numberWidth);
   function jump(bottom: boolean) {
     const element = scroll.current;
     if (!element) return;
@@ -61,7 +63,7 @@ export function MobileSheet({ sheet, onOpenRow, onAdd, onConfigure, onRunColumn,
             const cell = row.cells[column.id];
             return <td key={column.id} className={!column.sources.length ? 'input-cell' : ''}>
               <button className="mobile-cell" aria-label={`查看第 ${rowIndex + 1} 行 ${column.name}`} aria-describedby={`mobile-status-${row.id}-${column.id}`} onClick={() => onOpenRow(row.id, column.id)}>
-                <span className={'mobile-cell-preview' + (!(cell.preview ?? cell.value) ? ' placeholder' : '')}>{cellPreview(cell.preview ?? cell.value) || '点击填写内容'}</span>
+                <span className={'mobile-cell-preview' + (!(cell.preview ?? cell.value) ? ' placeholder' : '')}>{cellPreview(cellText(column,cell.preview ?? cell.value)) || '点击填写内容'}</span>
                 <MobileStatusIcon status={cell.status} error={cell.error}/>
                 <span id={`mobile-status-${row.id}-${column.id}`} className="sr-only">状态：{labels[cell.status]}{cell.error ? `，${cell.error}` : ''}</span>
               </button>

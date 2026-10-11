@@ -1,3 +1,4 @@
+import {cellText} from './markdown';
 import { descendants, topological } from './graph';
 import type { Sheet } from './types';
 
@@ -9,7 +10,7 @@ export function rowWorkflow(sheet: Sheet, rowId: string) {
   const available = new Set<string>();
   const sources: {row:string;column:string}[] = [];
   const potential = new Set<string>();
-  for (const column of sheet.columns) if (row.cells[column.id].status === 'done' && row.cells[column.id].value.trim()) {
+  for (const column of sheet.columns) if (row.cells[column.id].status === 'done' && cellText(column,row.cells[column.id].value).trim()) {
     sources.push({row:rowId,column:column.id});
     for (const downstream of descendants(sheet.columns, column.id)) potential.add(downstream);
   }
@@ -19,7 +20,7 @@ export function rowWorkflow(sheet: Sheet, rowId: string) {
     const column = sheet.columns.find(item => item.id === columnId)!;
     const cell = row.cells[columnId];
     if (cell.status === 'done') {
-      if (cell.value.trim()) available.add(columnId);
+      if (cellText(column,cell.value).trim()) available.add(columnId);
       continue;
     }
     if (!column.sources.length) continue;
