@@ -1,7 +1,7 @@
 import { MAX_SHEET_ROWS } from '../core/types';
 import { ArrowDownToLine, ArrowUpToLine, Plus, Settings2 } from 'lucide-react';
-import { useLayoutEffect, useRef } from 'react';
-import { columnWidth, labels, type Column, type Sheet } from '../core/types';
+import { useLayoutEffect, useRef, useState } from 'react';
+import { labels, type Column, type Sheet } from '../core/types';
 import { MobileStatusIcon } from './mobile-status-icon';
 
 // The scheduler retains the full text. This only limits the DOM used by the overview.
@@ -17,10 +17,23 @@ export function MobileSheet({ sheet, onOpenRow, onAdd, onConfigure, onRunColumn,
   position: { top: number; left: number }; onPositionChange: (top: number, left: number) => void;
 }) {
   const scroll = useRef<HTMLDivElement>(null);
+  const [availableWidth, setAvailableWidth] = useState(0);
+  useLayoutEffect(() => {
+    const element = scroll.current;
+    if (!element) return;
+    const measure = () => setAvailableWidth(element.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   useLayoutEffect(() => {
     if (scroll.current) { scroll.current.scrollTop = position.top; scroll.current.scrollLeft = position.left; }
   }, [position]);
-  const widths = sheet.columns.map((column, index) => Math.max(190, Math.min(300, columnWidth(column, index))));
+  // Mobile widths are presentation-only: always fit the row number and two equal
+  // data columns plus a 5% hint of the next, independently of desktop widths.
+  const numberWidth = 28;
+  const dataWidth = availableWidth ? Math.max(1, Math.floor((availableWidth - numberWidth) / 2.05)) : 160;
   function jump(bottom: boolean) {
     const element = scroll.current;
     if (!element) return;
@@ -31,8 +44,8 @@ export function MobileSheet({ sheet, onOpenRow, onAdd, onConfigure, onRunColumn,
   }
   return <>
     <div className="mobile-table-scroll" ref={scroll} onScroll={event => onPositionChange(event.currentTarget.scrollTop, event.currentTarget.scrollLeft)} data-testid="mobile-table-scroll" tabIndex={0} aria-label="移动端表格，可横向和纵向滚动">
-      <table className="mobile-table" style={{ width: 40 + widths.reduce((sum, width) => sum + width, 0) }}>
-        <colgroup><col style={{ width: 40 }}/>{sheet.columns.map((column, index) => <col key={column.id} style={{ width: widths[index] }}/>)}</colgroup>
+      <table className="mobile-table" style={{ width: numberWidth + dataWidth * sheet.columns.length }}>
+        <colgroup><col style={{ width: numberWidth }}/>{sheet.columns.map(column => <col key={column.id} style={{ width: dataWidth }}/>)}</colgroup>
         <thead><tr><th className="mobile-row-number">#</th>{sheet.columns.map((column, index) => <th key={column.id}>
           <div className="column-top"><span className="column-letter">{columnLetter(index)}</span>
             <button className="column-name" onClick={() => onConfigure(column)}>{column.name}</button>

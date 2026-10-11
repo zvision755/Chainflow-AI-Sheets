@@ -28,6 +28,32 @@ async function view(page: Page, label: string) {
   await page.getByLabel('应用菜单', { exact: true }).click();
   await page.getByRole('menuitemradio', { name: label, exact: true }).click();
 }
+test('mobile fits the row number and two equal columns without inheriting desktop widths', async ({ page }) => {
+  const sheet = fixture(8);
+  sheet.columns.forEach((column, index) => column.width = [180, 900, 520, 250][index]);
+  sheet.rows.forEach(row => {
+    row.cells.a = emptyCell('地球をアイスピックでつついたとしたら。', 'done');
+    row.cells.b = emptyCell('もし地球をアイスピックでつついたら、ちょうど良い振動が起こる。', 'done');
+  });
+  await open(page, sheet);
+  for (const width of [320, 360, 375, 390, 393, 402, 414, 430, 440, 700]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect.poll(async () => page.locator('.mobile-table').evaluate(table => {
+      const container = table.parentElement!.getBoundingClientRect();
+      const columns = Array.from(table.querySelectorAll('thead th'), cell => cell.getBoundingClientRect());
+      return Math.abs(columns[1].width - Math.floor((table.parentElement!.clientWidth - 28) / 2.05)) < 1 && columns.slice(1).every(column => Math.abs(columns[1].width - column.width) < 1) && columns[2].right <= container.right + 1 && columns[0].width <= 29 && container.right - columns[3].left >= columns[3].width * 0.05;
+    })).toBe(true);
+    await expect(page.locator('.column-resize-handle, .row-resize-handle')).toHaveCount(0);
+    expect(await page.getByTestId('mobile-table-scroll').evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
+  }
+  await page.setViewportSize({ width: 402, height: 874 });
+  await page.screenshot({ path: 'outputs/mobile-equal-columns-402.png' });
+  await view(page, '电脑版');
+  const desktopWidths = await page.locator('.data-col').evaluateAll(columns => columns.map(column => (column as HTMLElement).style.width));
+  expect(desktopWidths).toEqual(['180px', '900px', '520px', '250px']);
+  await view(page, '手机版');
+  await expect(page.locator('.mobile-table')).toBeVisible();
+});
 test('two-line overview opens every column, highlights clicked C, copies full long text, and navigates rows', async ({ page }) => {
   const sheet = fixture(), full = '长文本解读，保留全部内容。\n'.repeat(300);
   sheet.rows[0].cells.c = emptyCell(full, 'done'); sheet.rows[0].height = 800;
