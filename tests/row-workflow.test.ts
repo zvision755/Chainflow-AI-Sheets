@@ -32,7 +32,7 @@ test('arbitrary starting column preserves manually filled values and leaves empt
   }
 });
 test('multi-input branches require every source and preserve simultaneous manual starts', async () => {
-  const sheet = fixture(); sheet.columns[2].sources = ['a', 'b'];
+  const sheet = fixture(); sheet.columns[2].sources = ['a', 'b']; sheet.columns[2].userPrompt = '{{source:a}}\n{{source:b}}';
   const calls: string[] = [], engine = new Scheduler(sheet, async payload => { calls.push(payload.input); return { text: '合并结果', usage: { input: 1, output: 1 } }; });
   const rowId = engine.addRow(undefined, { b: '独立来源' });
   assert.deepEqual(rowWorkflow(sheet, rowId).targets, []);

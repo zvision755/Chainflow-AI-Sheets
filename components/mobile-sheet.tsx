@@ -30,10 +30,10 @@ export function MobileSheet({ sheet, onOpenRow, onAdd, onConfigure, onRunColumn,
   useLayoutEffect(() => {
     if (scroll.current) { scroll.current.scrollTop = position.top; scroll.current.scrollLeft = position.left; }
   }, [position]);
-  // Mobile widths are presentation-only: always fit the row number and two equal
-  // data columns plus a 5% hint of the next, independently of desktop widths.
+  // Mobile widths are presentation-only. Narrow screens retain two columns and
+  // a 5% hint; wider screens show more columns rather than stretching each one.
   const numberWidth = 28;
-  const dataWidth = availableWidth ? Math.max(1, Math.floor((availableWidth - numberWidth) / 2.05)) : 160;
+  const dataWidth = availableWidth ? Math.min(220, Math.max(1, Math.floor((availableWidth - numberWidth) / 2.05))) : 160;
   function jump(bottom: boolean) {
     const element = scroll.current;
     if (!element) return;
@@ -51,15 +51,15 @@ export function MobileSheet({ sheet, onOpenRow, onAdd, onConfigure, onRunColumn,
             <button className="column-name" onClick={() => onConfigure(column)}>{column.name}</button>
             <details className="mobile-column-menu"><summary aria-label={`设置 ${column.name}`} title={`设置 ${column.name}`}><Settings2 size={18}/></summary>
               <div><button onClick={event => { onConfigure(column); event.currentTarget.closest('details')?.removeAttribute('open'); }}>列设置</button>
-                {index > 0 && <button aria-label={`运行列 ${column.name}`} onClick={event => { onRunColumn(column); event.currentTarget.closest('details')?.removeAttribute('open'); }}>运行此列</button>}
+                {column.sources.length > 0 && <button aria-label={`运行列 ${column.name}`} onClick={event => { onRunColumn(column); event.currentTarget.closest('details')?.removeAttribute('open'); }}>运行此列</button>}
               </div></details>
           </div>
         </th>)}</tr></thead>
         <tbody>{sheet.rows.map((row, rowIndex) => <tr key={row.id} data-row-id={row.id}>
           <td className="mobile-row-number"><button aria-label={`查看第 ${rowIndex + 1} 行`} onClick={() => onOpenRow(row.id, sheet.columns[0].id)}>{rowIndex + 1}</button></td>
-          {sheet.columns.map((column, columnIndex) => {
+          {sheet.columns.map(column => {
             const cell = row.cells[column.id];
-            return <td key={column.id} className={columnIndex === 0 ? 'input-cell' : ''}>
+            return <td key={column.id} className={!column.sources.length ? 'input-cell' : ''}>
               <button className="mobile-cell" aria-label={`查看第 ${rowIndex + 1} 行 ${column.name}`} aria-describedby={`mobile-status-${row.id}-${column.id}`} onClick={() => onOpenRow(row.id, column.id)}>
                 <span className={'mobile-cell-preview' + (!(cell.preview ?? cell.value) ? ' placeholder' : '')}>{cellPreview(cell.preview ?? cell.value) || '点击填写内容'}</span>
                 <MobileStatusIcon status={cell.status} error={cell.error}/>

@@ -1,3 +1,4 @@
+import {checkSourceTemplates} from './source-template-check';
 import { test, expect, type Page } from '@playwright/test';
 import { emptyCell, newColumn, type Sheet } from '../../core/types';
 import { defaultRunOptions } from '../../core/run-settings';
@@ -28,7 +29,7 @@ async function view(page: Page, label: string) {
   await page.getByLabel('应用菜单', { exact: true }).click();
   await page.getByRole('menuitemradio', { name: label, exact: true }).click();
 }
-test('mobile fits the row number and two equal columns without inheriting desktop widths', async ({ page }) => {
+test('mobile keeps portrait density and shows more capped columns on tablets without changing desktop widths', async ({ page }) => {
   const sheet = fixture(8);
   sheet.columns.forEach((column, index) => column.width = [180, 900, 520, 250][index]);
   sheet.rows.forEach(row => {
@@ -36,15 +37,23 @@ test('mobile fits the row number and two equal columns without inheriting deskto
     row.cells.b = emptyCell('もし地球をアイスピックでつついたら、ちょうど良い振動が起こる。', 'done');
   });
   await open(page, sheet);
-  for (const width of [320, 360, 375, 390, 393, 402, 414, 430, 440, 700]) {
+  await view(page, '手机版');
+  for (const width of [320, 360, 375, 390, 393, 402, 414, 430, 440, 700, 768, 820, 1024, 1194, 1366, 390]) {
     await page.setViewportSize({ width, height: 844 });
     await expect.poll(async () => page.locator('.mobile-table').evaluate(table => {
       const container = table.parentElement!.getBoundingClientRect();
       const columns = Array.from(table.querySelectorAll('thead th'), cell => cell.getBoundingClientRect());
-      return Math.abs(columns[1].width - Math.floor((table.parentElement!.clientWidth - 28) / 2.05)) < 1 && columns.slice(1).every(column => Math.abs(columns[1].width - column.width) < 1) && columns[2].right <= container.right + 1 && columns[0].width <= 29 && container.right - columns[3].left >= columns[3].width * 0.05;
+      const fullColumns = columns.slice(1).filter(column => column.right <= container.right + 1).length;
+      return columns[1].width <= 221 && columns.slice(1).every(column => Math.abs(columns[1].width - column.width) < 1)
+        && columns[2].right <= container.right + 1 && columns[0].width <= 29
+        && (container.width <= 480 ? container.right - columns[3].left >= columns[3].width * 0.05 : true)
+        && (container.width <= 440 ? fullColumns === 2 : true)
+        && (container.width >= 700 ? fullColumns >= 3 : true)
+        && (container.width >= 950 ? fullColumns === 4 : true);
     })).toBe(true);
     await expect(page.locator('.column-resize-handle, .row-resize-handle')).toHaveCount(0);
-    expect(await page.getByTestId('mobile-table-scroll').evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    if (width <= 440) expect(await page.getByTestId('mobile-table-scroll').evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
   }
   await page.setViewportSize({ width: 402, height: 874 });
   await page.screenshot({ path: 'outputs/mobile-equal-columns-402.png' });
@@ -437,3 +446,5 @@ test('run all scope recalculates count and missing mode reuses stale content; co
   expect(rows[0].cells.b.status).toBe('done');expect(rows[0].cells.b.value).toBe('保留来源');
   expect(rows[0].cells.d.status).toBe('stale');expect(rows[0].cells.d.value).toBe('保留下游');
 });
+
+test('mobile multi-source warning and explicit A/C cell templates block invalid saves',async({page})=>{await open(page);await checkSourceTemplates(page);});

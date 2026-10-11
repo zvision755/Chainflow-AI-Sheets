@@ -1,3 +1,4 @@
+import {checkSourceTemplates} from './source-template-check';
 import {test,expect} from '@playwright/test';
 test('Server retains authentication, shared workspace, encrypted key and protected AI/TTS/Agent APIs',async({page,context})=>{
  await page.addInitScript(()=>localStorage.setItem('chainflow-view-preference-v1','desktop'));
@@ -14,6 +15,7 @@ test('Server retains authentication, shared workspace, encrypted key and protect
  const ai=await context.request.post('/api/generate',{headers,data:{model:'gpt-6-luna',prompt:'说明',input:'测试',maxTokens:128,reasoning:'none'}});expect(ai.status()).toBe(200);
  const tts=await context.request.post('/api/local-tts/speech',{headers,data:{url:'https://api.openai.com/v1',model:'tts-1',voice:'alloy',speed:1,language:'ja',input:'朗读'}});expect(tts.status()).toBe(200);expect(tts.headers()['content-type']).toContain('audio/wav');
  const agent=await context.request.post('/api/local-agent/generate',{headers,data:{model:'gpt-6-luna',prompt:'说明',input:'测试',maxTokens:128,reasoning:'none',stream:true}});expect(agent.status()).toBe(200);expect(await agent.text()).toContain('Agent 测试结果');
+ await checkSourceTemplates(page);
  await context.request.post('/api/auth/logout',{headers:{...headers,'X-Chainflow-Auth':'1'},data:{}});
  for(const path of ['/api/workspace','/api/settings'])expect((await context.request.get(path)).status()).toBe(401);
  for(const path of ['/api/generate','/api/local-tts/speech','/api/local-agent/generate'])expect((await context.request.post(path,{data:{}})).status()).toBe(401);

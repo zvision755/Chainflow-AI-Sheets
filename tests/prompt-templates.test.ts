@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPrompts, expandPrompt, promptContext } from '../core/prompt-templates';
+import { buildPrompts, expandPrompt, promptContext, validatePromptTemplates } from '../core/prompt-templates';
 import { example, emptyCell, type GenerateInput, type RunOptions } from '../core/types';
 import { Scheduler } from '../core/scheduler';
 import { parseSheet, serialize } from '../core/storage';
@@ -18,7 +18,7 @@ test('legacy sheets default to source-only user messages and persist templates w
 test('templates use exact current sources, prior result, bounded history, UTC seconds and request ID',()=>{
   const s=example(),col=s.columns[2];col.sources=['input','explain'];s.rows[0].cells.explain=emptyCell('来源例句','done');s.rows[0].cells.teacher=emptyCell('原解读','done');
   const context=promptContext(s,'row-1',col,['先前结果'],new Date('2026-10-06T01:02:03.456Z'),'test-id');
-  assert.equal(context.text,'[日语单词]\nフレーム\n\n[日语释义]\n来源例句');assert.equal(context.existing_result,'1. 先前结果\n\n2. 原解读');assert.deepEqual(JSON.parse(context.recent_results),['先前结果','原解读']);assert.equal(context.timestamp,'2026-10-06T01:02:03Z');assert.equal(context.request_id,'test-id');assert.equal(context.row_number,'1');assert.equal(context.column_name,col.name);
+  assert.equal(context.text,'');assert.equal(context['source:input'],'フレーム');assert.equal(context['source:explain'],'来源例句');assert.equal(context.existing_result,'1. 先前结果\n\n2. 原解读');assert.deepEqual(JSON.parse(context.recent_results),['先前结果','原解读']);assert.equal(context.timestamp,'2026-10-06T01:02:03Z');assert.equal(context.request_id,'test-id');assert.equal(context.row_number,'1');assert.equal(context.column_name,col.name);
   assert.ok(promptContext(s,'row-1',col,Array.from({length:5},(_,i)=> '"'.repeat(32000)+i)).recent_results.length<=10000);
 });
 test('request IDs work in browsers without crypto.randomUUID',()=>{
@@ -72,4 +72,60 @@ test('Agent keeps system instructions exact and accepts output without source te
   const s=example(),sent:GenerateInput[]=[],e=new Scheduler(s,async p=>{sent.push(p);return {text:'没有来源词',usage:{input:1,output:2}};});
   e.run(e.targets('cell','row-1','explain'),{...options,mode:'agent',autoRetry:true,maxRetries:1},true);await finish(e);
   assert.equal(sent.length,1);assert.equal(sent[0].prompt,s.columns[1].prompt);assert.equal(sent[0].input,'フレーム');assert.equal(s.rows[0].cells.explain.value,'没有来源词');assert.equal(s.rows[0].cells.explain.status,'done');
+});
+
+
+test('multi-source templates send only raw cells and remain bound after rename, reorder and JSON roundtrip',()=>{
+  const s=example(),col=s.columns[2];col.sources=['input','explain'];col.prompt='解释语境中的单词';
+  col.userPrompt='语境：{{source:input}}\n单词：{{ source:explain }}';
+  s.rows[0].cells.input.value='彼は将来に備えて貯金している。';
+  s.rows[0].cells.explain=emptyCell('備える {{timestamp}} $&','done');
+  const expected={prompt:col.prompt,input:'语境：彼は将来に備えて貯金している。\n单词：備える {{timestamp}} $&'};
+  assert.deepEqual(buildPrompts(col,promptContext(s,'row-1',col)),expected);
+  s.columns[0].name='任意改名';[s.columns[1],s.columns[2]]=[s.columns[2],s.columns[1]];
+  const restored=parseSheet(JSON.parse(serialize(s))),same=restored.columns.find(c=>c.id===col.id)!;
+  assert.deepEqual(buildPrompts(same,promptContext(restored,'row-1',same)),expected);
+  assert.equal(buildPrompts({...same,userPrompt:'{{source:explain}} / {{source:input}}'},promptContext(restored,'row-1',same)).input,'備える {{timestamp}} $& / 彼は将来に備えて貯金している。');
+});
+
+test('single-source keeps custom system and user text around the default text template',()=>{
+  const s=example(),col=s.columns[1];col.prompt='请按规则处理 {{column_name}}';col.userPrompt='语境说明：这是日语学习任务。\n需要解释：{{text}}\n请只回答中文。';
+  const actual=buildPrompts(col,promptContext(s,'row-1',col));
+  assert.equal(actual.prompt,'请按规则处理 日语释义');
+  assert.equal(actual.input,'语境说明：这是日语学习任务。\n需要解释：フレーム\n请只回答中文。');
+  col.userPrompt='不使用模板的自定义任务也保留';assert.equal(buildPrompts(col,promptContext(s,'row-1',col)).input,col.userPrompt);
+});
+
+test('multi-source rejects text in either prompt, omitted user sources and undeclared references without overwriting configuration',()=>{
+  const s=example(),original={...s.columns[2]},col={...original,sources:['input','explain'],userPrompt:'{{source:input}}\n{{source:explain}}'};
+  const e=new Scheduler(s,async()=>{throw Error('not called')});
+  assert.throws(()=>e.configure({...col,userPrompt:'{{text}}'}),/多来源已禁用/);
+  assert.throws(()=>e.configure({...col,prompt:'{{text}}'}),/多来源已禁用/);
+  assert.throws(()=>e.configure({...col,userPrompt:'{{source:input}}'}),/必须使用每个/);
+  assert.throws(()=>e.configure({...col,prompt:'{{source:input}}',userPrompt:'普通文字'}),/必须使用每个/);
+  assert.throws(()=>validatePromptTemplates({...col,userPrompt:'{{source:teacher}}'}),/不再对应/);
+  assert.deepEqual(s.columns[2],original);
+  e.configure(col);assert.equal(s.columns[2].userPrompt,col.userPrompt);
+  assert.throws(()=>e.configure({...col,sources:['input']}),/不再对应/);
+});
+
+test('legacy multi-source text is preserved on load but errors before API and Agent calls',async()=>{
+  for(const mode of ['api','agent'] as const){
+    const s=example();s.columns[2].sources=['input','explain'];s.columns[2].userPrompt='{{text}}';s.rows[0].cells.explain=emptyCell('備える','done');
+    const restored=parseSheet(JSON.parse(serialize(s)));let calls=0;
+    const e=new Scheduler(restored,async()=>{calls++;throw Error('not called')});
+    e.run(e.targets('cell','row-1','teacher'),{...options,mode},true);await finish(e);
+    assert.equal(calls,0);assert.match(restored.rows[0].cells.teacher.error!,/多来源已禁用/);
+    assert.equal(restored.columns[2].userPrompt,'{{text}}');assert.equal(e.running,0);assert.equal(e.queued,0);
+  }
+});
+
+test('multi-source API and Agent use explicitly labelled A/C input with no extra headers',async()=>{
+  for(const mode of ['api','agent'] as const){
+    const s=example(),col=s.columns[2];col.sources=['input','explain'];col.userPrompt='语境：{{source:input}}\n单词：{{source:explain}}';
+    s.rows[0].cells.explain=emptyCell('備える','done');const sent:GenerateInput[]=[];
+    const e=new Scheduler(s,async payload=>{sent.push(payload);return {text:'语境解释',usage:{input:1,output:2}};});
+    e.run(e.targets('cell','row-1','teacher'),{...options,mode},true);await finish(e);
+    assert.equal(sent.length,1);assert.equal(sent[0].input,'语境：フレーム\n单词：備える');assert.equal(sent[0].prompt,col.prompt);
+  }
 });

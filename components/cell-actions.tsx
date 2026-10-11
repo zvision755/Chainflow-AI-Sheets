@@ -14,13 +14,13 @@ export type CellActionProps = {
 };
 // All views call the same actions. In particular, history selection changes the actual
 // downstream source and copying uses the full saved/streaming text, never a preview.
-export function CellActions({ engine, row, column: col, rowIndex: index, columnIndex: i, copiedCell, speech, ttsAvailable, onRun, onCopy, onSpeak }: CellActionProps) {
+export function CellActions({ engine, row, column: col, rowIndex: index,  copiedCell, speech, ttsAvailable, onRun, onCopy, onSpeak }: CellActionProps) {
   const cell = row.cells[col.id];
-  const history = i > 0 ? engine.recentResults(row.id, col.id) : [];
+  const history = engine.recentResults(row.id, col.id);
   const historyIndex = selectedHistoryIndex(cell, history);
   const cellKey = `${row.id}:${col.id}`;
   return <>
-    <div className="cell-footer">{i > 0 ? <>
+    <div className="cell-footer">{col.sources.length > 0 ? <>
       <span className={'status ' + cell.status}>{cell.status === 'running' && <span className="spinner"/>}{labels[cell.status]}</span>
       {cell.elapsed !== undefined && <span className="cell-time">{(cell.elapsed / 1000).toFixed(1)}s</span>}
       <button className="cell-run" aria-label={`${cell.status === 'error' ? '重试' : '运行'}第 ${index + 1} 行 ${col.name}`}
@@ -31,7 +31,7 @@ export function CellActions({ engine, row, column: col, rowIndex: index, columnI
         {copiedCell === cellKey ? <><Check size={13}/>已复制</> : <><Copy size={13}/>复制</>}
       </button>
     </div>
-    {i > 0 && history.length > 0 && <div className="cell-history">
+    {history.length > 0 && <div className="cell-history">
       <button aria-label={`上一条历史 第 ${index + 1} 行 ${col.name}`} title="查看上一条结果；切换后下游需要更新" disabled={engine.busy || historyIndex <= 0} onClick={() => engine.selectHistory(row.id, col.id, historyIndex - 1)}><ChevronLeft size={15}/></button>
       <span>历史 {historyIndex + 1}/{history.length}</span>
       <button aria-label={`下一条历史 第 ${index + 1} 行 ${col.name}`} title="查看下一条结果；切换后下游需要更新" disabled={engine.busy || historyIndex >= history.length - 1} onClick={() => engine.selectHistory(row.id, col.id, historyIndex + 1)}><ChevronRight size={15}/></button>
@@ -45,13 +45,13 @@ export function CellActions({ engine, row, column: col, rowIndex: index, columnI
     </div>}
     {speech.key === cellKey && speech.message && <div className={speech.phase === 'error' ? 'cell-error' : 'retry-note'} role={speech.phase === 'error' ? 'alert' : 'status'}>{speech.message}</div>}
     {cell.error && <div className={cell.status === 'queued' ? 'retry-note' : 'cell-error'} role={cell.status === 'queued' ? 'status' : 'alert'}>{cell.error}</div>}
-    {cell.usage && i > 0 && <div className="usage">输入 {cell.usage.input} / 输出 {cell.usage.output} tokens</div>}
+    {cell.usage && col.sources.length > 0 && <div className="usage">输入 {cell.usage.input} / 输出 {cell.usage.output} tokens</div>}
   </>;
 }
 
-export function CompactCellActions({ engine, row, column: col, rowIndex: index, columnIndex: i, copiedCell, speech, ttsAvailable, onRun, onCopy, onSpeak }: CellActionProps) {
+export function CompactCellActions({ engine, row, column: col, rowIndex: index,  copiedCell, speech, ttsAvailable, onRun, onCopy, onSpeak }: CellActionProps) {
   const cell = row.cells[col.id];
-  const history = i > 0 ? engine.recentResults(row.id, col.id) : [];
+  const history = engine.recentResults(row.id, col.id);
   const historyIndex = selectedHistoryIndex(cell, history);
   const cellKey = `${row.id}:${col.id}`;
   return <div className="row-card-actions">
@@ -62,7 +62,7 @@ export function CompactCellActions({ engine, row, column: col, rowIndex: index, 
     <button aria-label={`复制第 ${index + 1} 行 ${col.name}`} title="复制完整内容" onClick={() => void onCopy(row.id, col.id, cell.preview ?? cell.value)}>
       {copiedCell === cellKey ? <Check size={18}/> : <Copy size={17}/>}
     </button>
-    {i > 0 && <details className="row-card-menu"><summary aria-label={`更多 ${col.name} 操作`} title={`更多 ${col.name} 操作`}><MoreHorizontal size={19}/></summary>
+    {col.sources.length > 0 && <details className="row-card-menu"><summary aria-label={`更多 ${col.name} 操作`} title={`更多 ${col.name} 操作`}><MoreHorizontal size={19}/></summary>
       <div><button aria-label={`${cell.status === 'error' ? '重试' : '运行'}第 ${index + 1} 行 ${col.name}`} disabled={cell.status === 'running' || cell.status === 'queued'} onClick={event => { onRun(engine.targets('cell', row.id, col.id), true); event.currentTarget.closest('details')?.removeAttribute('open'); }}><Play size={15}/>重新生成</button>
         {history.length > 0 && <div className="row-card-history"><button aria-label={`上一条历史 第 ${index + 1} 行 ${col.name}`} disabled={engine.busy || historyIndex <= 0} onClick={() => engine.selectHistory(row.id, col.id, historyIndex - 1)}><ChevronLeft size={17}/></button><span>历史 {historyIndex + 1}/{history.length}</span><button aria-label={`下一条历史 第 ${index + 1} 行 ${col.name}`} disabled={engine.busy || historyIndex >= history.length - 1} onClick={() => engine.selectHistory(row.id, col.id, historyIndex + 1)}><ChevronRight size={17}/></button></div>}
       </div></details>}

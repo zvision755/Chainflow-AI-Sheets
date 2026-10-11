@@ -1,3 +1,4 @@
+import {checkSourceTemplates} from './source-template-check';
 import {test,expect} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {blankSheet} from '../../core/workspace';
@@ -38,3 +39,5 @@ test('Web duplicates the current table with its data and independent name',async
  await expect(page.getByLabel('表格名称',{exact:true})).toHaveValue('重复任务（副本）');await expect(page.getByLabel('第 1 行 输入',{exact:true})).toHaveValue('保留的原始输入');await expect(page.getByRole('status').filter({hasText:'已复制当前表格'})).toBeVisible();
  await page.getByLabel('表格名称',{exact:true}).fill('副本独立修改');await page.getByLabel('切换表格',{exact:true}).selectOption({label:'重复任务'});await expect(page.getByLabel('表格名称',{exact:true})).toHaveValue('重复任务');
 });
+
+test('Web shares strict multi-source templates and raw-cell preview',async({page})=>{await page.goto('./');await expect(page.locator('.app-shell')).toHaveAttribute('data-ready','true');await checkSourceTemplates(page);});

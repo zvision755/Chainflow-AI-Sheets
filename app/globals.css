@@ -29,3 +29,5 @@
 /* Shared persistence status remains visible in both views without hiding the table. */
 .sync-warning { padding: 8px 12px; background: #fff5dc; color: #5d4308; font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .sync-warning button { border: 1px solid currentColor; border-radius: 6px; padding: 5px 8px; background: transparent; }
+
+.prompt-source-warning{padding:12px;margin:12px 0;border:2px solid #d18b18;border-radius:8px;background:#fff7df;color:#704800;font-size:14px;overflow-wrap:anywhere}.prompt-source-warning p{margin:6px 0 0}.template-chips button:disabled{opacity:.45;cursor:not-allowed}

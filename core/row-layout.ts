@@ -30,10 +30,11 @@ export function wrappedLineCount(text: string, width: number) {
 }
 
 export function autoRowLines(row: Row, columns: Column[]) {
-  const resultLines = columns.slice(1).reduce((maximum, column, index) => {
+  const resultLines = columns.reduce((maximum, column, index) => {
+    if(!column.sources.length)return maximum;
     const cell = row.cells[column.id];
     const text = cell?.preview ?? cell?.value ?? '';
-    return Math.max(maximum, wrappedLineCount(text, columnWidth(column, index + 1) - 48));
+    return Math.max(maximum, wrappedLineCount(text, columnWidth(column, index) - 48));
   }, MIN_AUTO_LINES);
   return Math.max(MIN_AUTO_LINES, Math.min(MAX_AUTO_LINES, resultLines));
 }

@@ -23,7 +23,7 @@ export class Scheduler {
   get busy(){return !!(this.running+this.queued);}
   private key(row:string,col:string){return `${row}:${col}`;}
   private cell(row:string,col:string){return this.sheet.rows.find(r=>r.id===row)?.cells[col];}
-  targets(scope:'all'|'row'|'column'|'cell',row?:string,col?:string){return this.sheet.rows.filter(r=>!row||r.id===row).flatMap(r=>this.sheet.columns.slice(1).filter(c=>!col||c.id===col).map(c=>({row:r.id,column:c.id})));}
+  targets(scope:'all'|'row'|'column'|'cell',row?:string,col?:string){return this.sheet.rows.filter(r=>!row||r.id===row).flatMap(r=>this.sheet.columns.filter(c=>c.sources.length>0).filter(c=>!col||c.id===col).map(c=>({row:r.id,column:c.id})));}
   estimate(targets:{row:string;column:string}[],force=false,reuseExisting=false){return plan(this.sheet,targets,force,reuseExisting).length;}
   run(targets:{row:string;column:string}[],options:RunOptions,force=false,preserveCompleted:{row:string;column:string}[]=[],reuseExisting=false){
     const protectedSources=new Map<string,Set<string>>();
@@ -72,22 +72,21 @@ export class Scheduler {
     if(!Number.isInteger(historyLimit(column))||historyLimit(column)<1||historyLimit(column)>MAX_HISTORY_LIMIT)throw new Error('历史结果保留次数须为 1–100 的整数');
     const existing=this.sheet.columns.find(c=>c.id===column.id);if(!existing)throw new Error('列不存在');
     const columns=this.sheet.columns.map(c=>c.id===column.id?column:c);topological(columns);
-    if(column.id!==columns[0].id&&!column.sources.length)throw new Error('请至少选择一个来源列');
-    if(column.id!==columns[0].id)validatePromptTemplates(column);
+    if(column.sources.length)validatePromptTemplates(column,this.sheet);
     const changed=['sources','prompt','userPrompt','model','maxTokens','reasoning'].some(k=>JSON.stringify(existing[k as keyof Column])!==JSON.stringify(column[k as keyof Column]));
-    this.sheet.columns=columns;if(historyLimit(existing)!==historyLimit(column))for(const row of this.sheet.rows){const cell=row.cells[column.id];const values=cellHistory(cell,MAX_HISTORY_LIMIT).slice(-historyLimit(column));if(values.length&&!values.includes(cell.value)){cell.value=values.at(-1)!;this.invalidate(row.id,descendants(columns,column.id));}cell.history=values;cell.historyIndex=selectedHistoryIndex({...cell,historyIndex:undefined},values);}if(changed)this.sheet.rows.forEach(r=>this.invalidate(r.id,new Set([column.id,...descendants(columns,column.id)])));this.emit();this.pump();
+    this.sheet.columns=columns;if(historyLimit(existing)!==historyLimit(column))for(const row of this.sheet.rows){const cell=row.cells[column.id];const values=cellHistory(cell,MAX_HISTORY_LIMIT).slice(-historyLimit(column));if(values.length&&!values.includes(cell.value)){cell.value=values.at(-1)!;this.invalidate(row.id,descendants(columns,column.id));}cell.history=values;cell.historyIndex=selectedHistoryIndex({...cell,historyIndex:undefined},values);}if(changed)this.sheet.rows.forEach(r=>{this.invalidate(r.id,new Set([column.id,...descendants(columns,column.id)]));if(!column.sources.length)r.cells[column.id].status='done';});this.emit();this.pump();
   }
-  invalidateGeneratedResults(){if(this.busy)throw new Error('请先停止运行再切换 Agent 模型');const generated=new Set(this.sheet.columns.slice(1).map(c=>c.id));this.sheet.rows.forEach(row=>this.invalidate(row.id,generated));this.emit();}
+  invalidateGeneratedResults(){if(this.busy)throw new Error('请先停止运行再切换 Agent 模型');const generated=new Set(this.sheet.columns.filter(c=>c.sources.length>0).map(c=>c.id));this.sheet.rows.forEach(row=>this.invalidate(row.id,generated));this.emit();}
   addColumn(column:Column){const columns=[...this.sheet.columns,column];topological(columns);this.sheet.columns=columns;this.sheet.rows.forEach(r=>r.cells[column.id]=emptyCell());this.emit();}
-  removeColumn(col:string){if(col===this.sheet.columns[0].id)throw new Error('输入列不能删除');if(this.sheet.columns.some(c=>c.sources.includes(col)))throw new Error('其他列仍依赖此列，请先修改它们的来源');this.sheet.rows.forEach(r=>{this.invalidate(r.id,new Set([col]));delete r.cells[col];});this.sheet.columns=this.sheet.columns.filter(c=>c.id!==col);this.emit();}
-  moveColumn(col:string,delta:number){const cols=[...this.sheet.columns],i=cols.findIndex(c=>c.id===col),j=i+delta;if(i<1||j<1||j>=cols.length)return;[cols[i],cols[j]]=[cols[j],cols[i]];this.sheet.columns=cols;this.emit();}
+  removeColumn(col:string){if(this.sheet.columns.length<=1)throw new Error('至少保留一列');if(this.sheet.columns.some(c=>c.sources.includes(col)))throw new Error('其他列仍依赖此列，请先修改它们的来源');this.sheet.rows.forEach(r=>{this.invalidate(r.id,new Set([col]));delete r.cells[col];});this.sheet.columns=this.sheet.columns.filter(c=>c.id!==col);this.emit();}
+  moveColumn(col:string,delta:number){const cols=[...this.sheet.columns],i=cols.findIndex(c=>c.id===col),j=i+delta;if(i<0||j<0||j>=cols.length)return;[cols[i],cols[j]]=[cols[j],cols[i]];this.sheet.columns=cols;this.emit();}
   addRow(copy?:string,values:Record<string,string>={},afterRowId?:string){
     if(this.sheet.rows.length>=MAX_SHEET_ROWS)throw Error(`表格最多容纳 ${MAX_SHEET_ROWS} 行`);
     if(Object.keys(values).some(key=>!this.sheet.columns.some(column=>column.id===key))||Object.values(values).some(value=>value.length>32000))throw Error('请检查录入列及内容长度');
     const anchor=afterRowId===undefined?this.sheet.rows.length-1:this.sheet.rows.findIndex(row=>row.id===afterRowId);
     if(afterRowId!==undefined&&anchor<0)throw Error('插入位置的原行已删除，请保留草稿并重新选择插入位置');
     const source=this.sheet.rows.find(r=>r.id===copy),rowId=id();
-    this.sheet.rows.splice(anchor+1,0,{id:rowId,height:source?.height,cells:Object.fromEntries(this.sheet.columns.map((c,i)=>{const value=values[c.id]??source?.cells[c.id].value??'';return [c.id,emptyCell(value,i===0||values[c.id]?.trim()?'done':source?.cells[c.id].value?'stale':'idle')];}))});this.emit();return rowId;
+    this.sheet.rows.splice(anchor+1,0,{id:rowId,height:source?.height,cells:Object.fromEntries(this.sheet.columns.map(c=>{const value=values[c.id]??source?.cells[c.id].value??'';return [c.id,emptyCell(value,!c.sources.length||values[c.id]?.trim()?'done':source?.cells[c.id].value?'stale':'idle')];}))});this.emit();return rowId;
   }
   moveRow(rowId:string,delta:number){if(!Number.isInteger(delta)||Math.abs(delta)!==1)return;const from=this.sheet.rows.findIndex(row=>row.id===rowId),to=from+delta;if(from<0||to<0||to>=this.sheet.rows.length)return;[this.sheet.rows[from],this.sheet.rows[to]]=[this.sheet.rows[to],this.sheet.rows[from]];this.emit();}
   setRowHeight(rowId:string,height:number|null){const row=this.sheet.rows.find(item=>item.id===rowId);if(!row||row.height===height)return;if(height===null)delete row.height;else row.height=height;this.emit();}

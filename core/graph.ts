@@ -1,5 +1,6 @@
 import type { Column, Sheet } from './types';
 export function topological(columns: Column[]): string[] {
+  if(columns.some(c=>new Set(c.sources).size!==c.sources.length))throw new Error('来源列不能重复');
   const map = new Map(columns.map(c=>[c.id,c]));
   if (map.size!==columns.length) throw new Error('列 ID 重复');
   const visited=new Set<string>(),path=new Set<string>(),order:string[]=[];
@@ -20,7 +21,7 @@ export function plan(sheet:Sheet, targets:{row:string;column:string}[],force=fal
   topological(sheet.columns);
   const tasks=new Map<string,{row:string;column:string}>();
   function add(rowId:string,colId:string,isTarget:boolean){
-    const row=sheet.rows.find(r=>r.id===rowId),col=sheet.columns.find(c=>c.id===colId);if(!row||!col||col===sheet.columns[0])return;
+    const row=sheet.rows.find(r=>r.id===rowId),col=sheet.columns.find(c=>c.id===colId);if(!row||!col||!col.sources.length)return;
     const cell=row.cells[colId];
     if(reuseExisting&&cell.value.trim())return;
     if(cell.status==='done'&&!(force&&isTarget)&&!reuseExisting)return;
