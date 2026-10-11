@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { activeTable, addTable, initialWorkspace, restoreWorkspace, saveActive, selectTable, serializeWorkspace } from '../core/workspace';
+import { activeTable, addTable, duplicateTable, initialWorkspace, restoreWorkspace, saveActive, selectTable, serializeWorkspace } from '../core/workspace';
 import { savedExample, savedExampleOptions } from '../core/example-workflow';
 import { defaultRunOptions } from '../core/run-settings';
 import { serialize } from '../core/storage';
@@ -21,6 +21,15 @@ test('multiple tables retain edits, histories, names, layout and independent run
 test('loading example twice adds independent tables and never replaces the original',()=>{
  let workspace=initialWorkspace();workspace=addTable(workspace,savedExample(),savedExampleOptions());workspace=addTable(workspace,savedExample(),savedExampleOptions());assert.equal(workspace.tables.length,3);
  workspace.tables[1].sheet.rows[0].cells.input.value='edited';assert.equal(workspace.tables[2].sheet.rows[0].cells.input.value,'フレーム');assert.equal(workspace.tables[0].sheet.rows[0].cells.input.value,'');
+});
+test('duplicating a table preserves its prompts, content, history and run settings with independent data and a new id',()=>{
+ let workspace=addTable(initialWorkspace(),savedExample(),{...savedExampleOptions(),concurrency:7});
+ const source=activeTable(workspace);source.sheet.rows[0].cells.explain.history=['旧释义','当前释义'];source.sheet.rows[0].cells.explain.historyIndex=1;
+ const original=structuredClone(source);workspace=duplicateTable(workspace,source.id);const copy=activeTable(workspace);
+ assert.notEqual(copy.id,source.id);assert.equal(copy.sheet.name,'日语词汇学习（副本）');assert.equal(copy.sheet.columns[1].prompt,original.sheet.columns[1].prompt);assert.equal(copy.sheet.rows[0].cells.input.value,original.sheet.rows[0].cells.input.value);assert.equal(copy.sheet.rows[0].cells.explain.value,original.sheet.rows[0].cells.explain.value);assert.ok(original.sheet.rows[0].cells.explain.history?.every(item=>copy.sheet.rows[0].cells.explain.history?.includes(item)));assert.deepEqual(copy.options,original.options);
+ copy.sheet.columns[1].prompt='仅修改副本';copy.sheet.rows[0].cells.input.value='副本内容';copy.options.concurrency=2;
+ assert.equal(source.sheet.columns[1].prompt,original.sheet.columns[1].prompt);assert.equal(source.sheet.rows[0].cells.input.value,original.sheet.rows[0].cells.input.value);assert.equal(source.options.concurrency,7);
+ workspace=duplicateTable(workspace,source.id);assert.equal(activeTable(workspace).sheet.name,'日语词汇学习（副本 2）');assert.throws(()=>duplicateTable(workspace,'missing'));
 });
 test('old single-sheet storage migrates without losing prompts, outputs or settings; new workspace takes precedence',()=>{
  const old=savedExample();const options={...defaultRunOptions,concurrency:1};const migrated=restoreWorkspace(null,serialize(old),JSON.stringify(options));assert.equal(activeTable(migrated).sheet.rows.length,3);assert.equal(activeTable(migrated).options.concurrency,1);

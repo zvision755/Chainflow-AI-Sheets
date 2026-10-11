@@ -9,6 +9,12 @@ export function initialWorkspace():Workspace{return {version:1,activeId:'sheet-1
 export function activeTable(workspace:Workspace){const table=workspace.tables.find(t=>t.id===workspace.activeId);if(!table)throw Error('当前表格不存在');return table;}
 export function saveActive(workspace:Workspace,sheet:Sheet,options:RunOptions):Workspace{return {...workspace,tables:workspace.tables.map(t=>t.id===workspace.activeId?{...t,sheet:parseSheet(JSON.parse(serialize(sheet))),options:JSON.parse(writeRunOptions(options))}:t)};}
 export function addTable(workspace:Workspace,sheet:Sheet,options:RunOptions=defaultRunOptions):Workspace{const table={id:id(),sheet:parseSheet(JSON.parse(serialize(sheet))),options:JSON.parse(writeRunOptions(options))};return {...workspace,activeId:table.id,tables:[...workspace.tables,table]};}
+export function duplicateTable(workspace:Workspace,tableId:string):Workspace{
+ const source=workspace.tables.find(table=>table.id===tableId);if(!source)throw Error('表格不存在');
+ const base=source.sheet.name.trim()||'未命名表格';let suffix=1,name='';
+ do{name=`${base.slice(0,Math.max(0,100-`（副本${suffix===1?'':` ${suffix}`}）`.length))}（副本${suffix===1?'':` ${suffix}`}）`;suffix++;}while(workspace.tables.some(table=>table.sheet.name===name));
+ return addTable(workspace,{...source.sheet,name},source.options);
+}
 export function selectTable(workspace:Workspace,activeId:string):Workspace{if(!workspace.tables.some(t=>t.id===activeId))throw Error('表格不存在');return {...workspace,activeId};}
 export function serializeWorkspace(workspace:Workspace):string{return JSON.stringify({version:1,activeId:workspace.activeId,tables:workspace.tables.map(t=>({id:t.id,sheet:JSON.parse(serialize(t.sheet)),options:JSON.parse(writeRunOptions(t.options))}))});}
 export function restoreWorkspace(raw:string|null,legacySheet:string|null,legacyOptions:string|null):Workspace{

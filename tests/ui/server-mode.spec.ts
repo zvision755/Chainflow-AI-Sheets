@@ -5,6 +5,7 @@ test('Server retains authentication, shared workspace, encrypted key and protect
  await page.getByLabel('用户名',{exact:true}).fill('regression');await page.getByLabel('密码',{exact:true}).fill('test-only');await page.getByLabel('确认密码',{exact:true}).fill('test-only');await page.getByRole('button',{name:'创建账户并登录'}).click();
  await page.getByRole('button',{name:'创建全新空白工作簿'}).click();await expect(page.locator('.app-shell')).toHaveAttribute('data-ready','true');await page.getByLabel('第 1 行 输入',{exact:true}).fill('服务器持久化');await expect(page.locator('.local-save')).toContainText('已保存');
  await page.reload();await expect(page.locator('.app-shell')).toHaveAttribute('data-ready','true');await expect(page.getByLabel('第 1 行 输入',{exact:true})).toHaveValue('服务器持久化');
+ await page.getByRole('button',{name:'复制当前表格',exact:true}).click();await expect(page.getByLabel('第 1 行 输入',{exact:true})).toHaveValue('服务器持久化');await expect(page.getByLabel('表格名称',{exact:true})).toHaveValue('未命名表格（副本）');
  const response=await context.request.get('/api/workspace');expect(response.status()).toBe(200);expect(await response.text()).toContain('服务器持久化');
  const status=await (await context.request.get('/api/auth/status')).json();
  const settings=await (await context.request.get('/api/settings')).json();
