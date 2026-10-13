@@ -1,6 +1,6 @@
 import {desktopCell,editDesktopCell} from './desktop-cell';
 import {checkSourceTemplates} from './source-template-check';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, devices, type Page } from '@playwright/test';
 import { emptyCell, newColumn, type Sheet } from '../../core/types';
 import { defaultRunOptions } from '../../core/run-settings';
 import { serialize } from '../../core/storage';
@@ -449,3 +449,33 @@ test('run all scope recalculates count and missing mode reuses stale content; co
 });
 
 test('mobile multi-source warning and explicit A/C cell templates block invalid saves',async({page})=>{await open(page);await checkSourceTemplates(page);});
+
+import {seedCarousel,checkRowCarousel,swipeExistingRow} from './row-carousel-check';
+test('mobile row carousel follows touch, previews adjacent rows, settles and preserves editing and scrolling',async({page})=>{await seedCarousel(page);await open(page);await checkRowCarousel(page);});
+test('Android Chrome touch emulation preserves the shared carousel and native scrolling',async({browser})=>{
+ test.skip(browser.browserType().name()!=='chromium');
+ const context=await browser.newContext({...devices['Pixel 7'],viewport:{width:390,height:844},baseURL:'http://127.0.0.1:3002'});
+ try{const page=await context.newPage();await seedCarousel(page);await open(page);await checkRowCarousel(page);}finally{await context.close();}
+});
+
+import {createServer} from 'node:http';
+test('live SSE generation continues on its original row while swiping away and back',async({page})=>{
+ let finish=()=>{},calls=0;
+ const server=createServer((request,response)=>{
+  response.setHeader('Access-Control-Allow-Origin','*');response.setHeader('Access-Control-Allow-Headers','Authorization,Content-Type');
+  if(request.method==='OPTIONS'){response.end();return;}
+  calls++;response.writeHead(200,{'Content-Type':'text/event-stream'});
+  response.write('data: '+JSON.stringify({type:'delta',delta:'逐步'})+'\n\n');
+  finish=()=>response.end('data: '+JSON.stringify({type:'done',result:{text:'逐步完成的流式结果',usage:{input:1,output:2}}})+'\n\n');
+ });
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const port=(server.address() as {port:number}).port;
+ try{
+  await page.route('**/api/generate',route=>route.continue({url:`http://127.0.0.1:${port}/api/generate`}));
+  const sheet=fixture(2);sheet.columns=sheet.columns.slice(0,2);sheet.columns[1].minLength=1;sheet.rows.forEach(row=>{delete row.cells.c;delete row.cells.d;});
+  await open(page,sheet);await connect(page);await page.getByRole('button',{name:'查看第 1 行 原始内容',exact:true}).click();await page.getByRole('button',{name:'运行',exact:true}).click();
+  await expect(page.locator('.row-detail-current [data-column-id="b"] .row-card-text')).toHaveText('逐步');
+  await swipeExistingRow(page,1);await expect(page.locator('#row-detail-title')).toHaveText('第 2 行');finish();
+  await expect(page.locator('.row-detail-current [data-column-id="b"] .row-card-text')).toHaveText('尚无内容，点击编辑填写');
+  await swipeExistingRow(page,-1);await expect(page.locator('#row-detail-title')).toHaveText('第 1 行');await expect(page.locator('.row-detail-current [data-column-id="b"] .row-card-text')).toHaveText('逐步完成的流式结果');expect(calls).toBe(1);
+ }finally{finish();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+});

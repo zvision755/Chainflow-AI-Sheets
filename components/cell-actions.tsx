@@ -1,5 +1,5 @@
 import {cellText} from '../core/markdown';
-import { Check, ChevronLeft, ChevronRight, Copy, MoreHorizontal, Play, Square, Volume2 } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Copy, MoreHorizontal, Pencil, Play, Square, Volume2 } from 'lucide-react';
 import type { Scheduler } from '../core/scheduler';
 import { labels, type Column, type Row } from '../core/types';
 import { selectedHistoryIndex } from '../core/result-history';
@@ -12,10 +12,11 @@ export type CellActionProps = {
   onRun: (targets: { row: string; column: string }[], force?: boolean) => unknown;
   onCopy: (row: string, column: string, text: string) => unknown;
   onSpeak: (row: string, column: Column, text: string) => void;
+  onEdit?: () => void;
 };
 // All views call the same actions. In particular, history selection changes the actual
 // downstream source and copying uses the full saved/streaming text, never a preview.
-export function CellActions({ engine, row, column: col, rowIndex: index,  copiedCell, speech, ttsAvailable, onRun, onCopy, onSpeak }: CellActionProps) {
+export function CellActions({ engine, row, column: col, rowIndex: index,  copiedCell, speech, ttsAvailable, onRun, onCopy, onSpeak, onEdit }: CellActionProps) {
   const cell = row.cells[col.id];
   const history = engine.recentResults(row.id, col.id);
   const historyIndex = selectedHistoryIndex(cell, history);
@@ -38,6 +39,7 @@ export function CellActions({ engine, row, column: col, rowIndex: index,  copied
       <span>历史 {historyIndex + 1}/{history.length}</span>
       <button aria-label={`下一条历史 第 ${index + 1} 行 ${col.name}`} title="查看下一条结果；切换后下游需要更新" disabled={engine.busy || historyIndex >= history.length - 1} onClick={() => engine.selectHistory(row.id, col.id, historyIndex + 1)}><ChevronRight size={15}/></button>
     </div>}
+    {onEdit&&<button className="cell-edit" aria-label={`编辑单元格 第 ${index + 1} 行 ${col.name}`} title="编辑此单元格" onClick={onEdit}><Pencil size={15}/></button>}
     </div>
     {speech.key === cellKey && speech.message && <div className={speech.phase === 'error' ? 'cell-error' : 'retry-note'} role={speech.phase === 'error' ? 'alert' : 'status'}>{speech.message}</div>}
     {cell.error && <div className={cell.status === 'queued' ? 'retry-note' : 'cell-error'} role={cell.status === 'queued' ? 'status' : 'alert'}>{cell.error}</div>}

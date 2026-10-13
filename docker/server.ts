@@ -6,6 +6,7 @@ import { createDockerHandler, serveDockerRequest } from './http';
 import { AdminAuth } from '../server/admin-auth';
 import { PersonalStore } from '../server/personal-store';
 import { readFileSync } from 'node:fs';
+import {FileSpeechCache} from '../server/tts-audio-cache';
 
 const port=Number(process.env.PORT??8080);
 if(!Number.isInteger(port)||port<1024||port>65535)throw Error('PORT must be 1024–65535');
@@ -22,7 +23,8 @@ if(!/^[a-f0-9]{64}$/i.test(masterKey))throw Error('Encryption master key file mu
 const store=new PersonalStore('/data/chainflow/personal.sqlite',Buffer.from(masterKey,'hex'));
 // Validate persistent authentication state before opening the listener.
 await auth.handle(new Request('http://chainflow.internal/api/auth/status'));
-const handler=createDockerHandler({auth,store,fetcher,allowLan:lanAccess,bridge:bridge?{status:()=>bridge.status().catch(containerLoginError),generate:(input,signal,onText)=>bridge.generate(input,signal,onText).catch(containerLoginError)}:undefined});
+const speechCache=new FileSpeechCache('/data/chainflow/tts-cache',(event,key)=>console.info(`[TTS cache] ${event} ${key.slice(0,12)}`));
+const handler=createDockerHandler({auth,store,fetcher,speechCache,allowLan:lanAccess,bridge:bridge?{status:()=>bridge.status().catch(containerLoginError),generate:(input,signal,onText)=>bridge.generate(input,signal,onText).catch(containerLoginError)}:undefined});
 const {server}=await startProdServer({port,host:'0.0.0.0',outDir:'dist-docker',silent:true});
 const fallback=server.listeners('request')[0] as (req:any,res:any)=>void;
 server.removeAllListeners('request');server.on('request',(req,res)=>void serveDockerRequest(req,res,handler,fallback,lanAccess,true));

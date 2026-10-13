@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { externalTtsUrl, voiceMatches, type SpokenLanguage } from '../core/tts';
 import { json } from '../server/proxy';
+import type {SpeechCache} from '../server/tts-audio-cache';
 const base = z.object({ url: z.string().min(1).max(500) });
 const speech = base.extend({ model: z.string().regex(/^[a-zA-Z0-9._:/-]{1,100}$/), input: z.string().trim().min(1).max(4096), language: z.enum(['ja', 'en', 'en-gb', 'zh']), voice: z.string().max(120), speed: z.number().min(0.25).max(4) }).strict();
 const fail = (code: string, message: string, status: number) => json({ error: { code, message, retryable: false } }, status);
@@ -25,7 +26,7 @@ function isPrivateIPv4(hostname: string) {
   const [a, b] = parts.map(Number);
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 }
-export function createLocalTtsHandler(fetcher: typeof fetch = fetch, speechTimeout = 90000, builtin = { url: 'http://127.0.0.1:8881/v1', fetcher }, allowLan = false) {
+export function createLocalTtsHandler(fetcher: typeof fetch = fetch, speechTimeout = 90000, builtin = { url: 'http://127.0.0.1:8881/v1', fetcher }, allowLan = false, cache?:SpeechCache) {
   let active = 0;
   return async (request: Request, operation: 'voices' | 'speech', authenticated = false) => {
     if (request.method !== 'POST') return fail('method', '请使用 POST 请求', 405);
@@ -58,17 +59,19 @@ export function createLocalTtsHandler(fetcher: typeof fetch = fetch, speechTimeo
       target = isVolcengine ? url : url + (operation === 'speech' ? '/audio/speech' : remote ? '/models' : '/audio/voices');
     } catch { return fail('parameters', '请检查 TTS 地址与请求格式；第三方服务须使用已支持的 HTTPS 域名', 400); }
     if (request.signal.aborted) return fail('cancelled', '朗读已取消', 499);
+    const synthesize=async(signal:AbortSignal)=>{
     if (active >= 1) return fail('tts_busy', 'TTS 正在合成另一个请求，请稍后点击朗读', 429);
     active++;
     const controller = new AbortController(); let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, operation === 'speech' ? speechTimeout : 5000);
-    const cancel = () => controller.abort(); request.signal.addEventListener('abort', cancel, { once: true });
+    const cancel = () => controller.abort(); signal.addEventListener('abort', cancel, { once: true });
+    if(signal.aborted)controller.abort();
     try {
       const payload = parsed as z.infer<typeof speech>;
       // Pot's tauriFetch unwraps {type: 'Json', payload}; HTTP receives only payload.
       const volcPayload = (speechPayload: z.infer<typeof speech>) => ({ text: speechPayload.input, speaker: speechPayload.voice, language: volcengineLanguage[speechPayload.language] });
       // This optional provider is an undocumented community integration. Keep its host fixed,
-      // do not forward credentials, and keep its response transient and size-limited.
+      // do not forward credentials, and keep its response size-limited.
       const response = await (isBuiltin ? builtin.fetcher : fetcher)(target, { method: isVolcengine || operation === 'speech' ? 'POST' : 'GET', signal: controller.signal, cache: 'no-store', redirect: 'error', headers: {
           ...((isVolcengine || operation === 'speech') ? { 'Content-Type': 'application/json', Accept: isVolcengine ? 'application/json, text/plain, */*' : 'audio/wav' } : {}),
           ...(isVolcengine ? { 'Accept-Encoding': 'identity', Origin: 'chrome-extension://klgfhbdadaspgppeadghjjemk', 'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Site': 'none', Cookie: 'hasUserBehavior=1', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36' } : {}),
@@ -104,7 +107,12 @@ export function createLocalTtsHandler(fetcher: typeof fetch = fetch, speechTimeo
       if (bytes.length < 44 || new TextDecoder().decode(bytes.slice(0,4)) !== 'RIFF' || new TextDecoder().decode(bytes.slice(8,12)) !== 'WAVE') return fail('tts_audio', 'TTS 没有返回有效的 WAV 音频', 502);
       return new Response(bytes, { headers: { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Length': String(bytes.length) } });
     } catch (error) {
-      return fail(timedOut ? 'tts_timeout' : request.signal.aborted ? 'cancelled' : 'tts_network', timedOut ? 'TTS 合成超时，已停止；可缩短文字后重试' : request.signal.aborted ? '朗读已取消' : (error as Error)?.message === 'size' ? 'TTS 返回内容过大，请缩短文字' : '无法连接 TTS；内置模型请确认 Docker 中的 kokoro 已健康，第三方服务请检查 API 地址与网络', timedOut ? 504 : request.signal.aborted ? 499 : 502);
-    } finally { clearTimeout(timer); request.signal.removeEventListener('abort', cancel); active--; }
+      return fail(timedOut ? 'tts_timeout' : signal.aborted ? 'cancelled' : 'tts_network', timedOut ? 'TTS 合成超时，已停止；可缩短文字后重试' : signal.aborted ? '朗读已取消' : (error as Error)?.message === 'size' ? 'TTS 返回内容过大，请缩短文字' : '无法连接 TTS；内置模型请确认 Docker 中的 kokoro 已健康，第三方服务请检查 API 地址与网络', timedOut ? 504 : signal.aborted ? 499 : 502);
+    } finally { clearTimeout(timer); signal.removeEventListener('abort', cancel); active--; }
+    };
+    if(operation!=='speech'||!cache)return synthesize(request.signal);
+    const payload=parsed as z.infer<typeof speech>;
+    try{return await cache.getOrCreate({provider:isBuiltin?'builtin':isVolcengine?'volcengine':'external',endpoint:target,model:payload.model,voice:payload.voice,language:payload.language,speed:payload.speed,input:payload.input,format:isVolcengine?'provider-default':'wav',stream:false},request.signal,synthesize);}
+    catch{return fail(request.signal.aborted?'cancelled':'tts_network',request.signal.aborted?'朗读已取消':'TTS 合成失败，请稍后重试',request.signal.aborted?499:502);}
   };
 }

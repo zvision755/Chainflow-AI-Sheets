@@ -26,3 +26,6 @@ test('Web mobile columns stay compact on iPad and resize back to portrait with t
  await page.reload();await expect(page.locator('.app-shell')).toHaveAttribute('data-view','mobile');
  await expect(page.locator('.mobile-table')).toBeVisible();
 });
+
+import {seedCarousel,checkRowCarousel} from './row-carousel-check';
+test('Web shares the same touch carousel without server APIs',async({page})=>{await seedCarousel(page);await page.goto('./');await expect(page.locator('.app-shell')).toHaveAttribute('data-ready','true');await checkRowCarousel(page);});

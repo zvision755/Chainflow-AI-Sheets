@@ -7,6 +7,7 @@ import { createLocalTtsHandler } from '../build/local-tts-http';
 import type { AdminAuth } from '../server/admin-auth';
 import type { PersonalStore } from '../server/personal-store';
 import type {KokoroState} from '../macos/kokoro';
+import type {SpeechCache} from '../server/tts-audio-cache';
 type TtsRuntime={status():KokoroState;load(remember:boolean):Promise<KokoroState>;unload():Promise<KokoroState>};
 
 function isPrivateIPv4(hostname:string){
@@ -25,11 +26,11 @@ export function hostTtsFetch(fetcher:typeof fetch=fetch):typeof fetch {
 export function hostLocalModelFetch(fetcher:typeof fetch=fetch):typeof fetch {
   return (input,init)=>{const url=new URL(String(input));if(['127.0.0.1','localhost','[::1]'].includes(url.hostname)){if(!['1234','11434'].includes(url.port))throw Error('Unexpected local model destination');url.hostname='host.docker.internal';}return fetcher(url,init);};
 }
-export function createDockerHandler(options:{auth?:AdminAuth;store?:PersonalStore;bridge?:Pick<CodexBridge,'status'|'generate'>;fetcher?:typeof fetch;ttsFetcher?:typeof fetch;builtinTtsFetcher?:typeof fetch;runtime?:'docker'|'macos';builtinTtsUrl?:string;builtinTts?:boolean;ttsRuntime?:TtsRuntime;login?:()=>Promise<{authUrl:string}>;logout?:()=>Promise<void>;allowLan?:boolean}={}) {
+export function createDockerHandler(options:{auth?:AdminAuth;store?:PersonalStore;bridge?:Pick<CodexBridge,'status'|'generate'>;fetcher?:typeof fetch;ttsFetcher?:typeof fetch;builtinTtsFetcher?:typeof fetch;speechCache?:SpeechCache;runtime?:'docker'|'macos';builtinTtsUrl?:string;builtinTts?:boolean;ttsRuntime?:TtsRuntime;login?:()=>Promise<{authUrl:string}>;logout?:()=>Promise<void>;allowLan?:boolean}={}) {
   if(options.store&&!options.auth)throw Error('Persistent storage requires authentication');
   const runtime=options.runtime??'docker';
   const modelFetcher=runtime==='docker'?hostLocalModelFetch(options.fetcher??fetch):options.fetcher??fetch;
-  const tts=createLocalTtsHandler((input,init)=>['127.0.0.1','localhost','[::1]'].includes(new URL(String(input)).hostname) ? (options.ttsFetcher??hostTtsFetch())(input,init) : (options.fetcher??fetch)(input,init),90000,{url:options.builtinTtsUrl??'http://kokoro:8880/v1',fetcher:options.builtinTtsFetcher??fetch},options.allowLan===true);
+  const tts=createLocalTtsHandler((input,init)=>['127.0.0.1','localhost','[::1]'].includes(new URL(String(input)).hostname) ? (options.ttsFetcher??hostTtsFetch())(input,init) : (options.fetcher??fetch)(input,init),90000,{url:options.builtinTtsUrl??'http://kokoro:8880/v1',fetcher:options.builtinTtsFetcher??fetch},options.allowLan===true,options.speechCache);
   return async(request:Request):Promise<Response|null>=>{
     const url=new URL(request.url);
     // LAN requests are opt-in and accepted only for RFC1918 private IPv4 addresses.

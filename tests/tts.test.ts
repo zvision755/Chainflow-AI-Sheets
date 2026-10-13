@@ -78,9 +78,11 @@ function playerSetup(synthesize?: NonNullable<ConstructorParameters<typeof Speec
   const player=new SpeechPlayer({synthesize:synthesize??(async()=>{calls++;return new Blob([wav()]);}),audio:()=>{const audio={src:'',onended:null,onerror:null,paused:false,play:async()=>{},pause(){this.paused=true;},removeAttribute(){this.src='';},load(){}};audios.push(audio);return audio;},createUrl:()=>`blob:test-${++created}`,revokeUrl:url=>revoked.push(url),timeout:25});
   return {player,revoked,audios,get created(){return created;},get calls(){return calls;}};
 }
-test('player holds one transient URL, releases it on end/stop, and synthesizes again on each click', async () => {
+test('player releases URLs on end/stop, replays one transient blob across cells and resynthesizes changed text or voice', async () => {
   const s=playerSetup();await s.player.speak('A','フレーム','ja',defaultTtsConfig);assert.equal(s.player.snapshot().phase,'playing');s.audios[0].onended();assert.equal(s.player.snapshot().phase,'idle');assert.deepEqual(s.revoked,['blob:test-1']);
-  await s.player.speak('A','フレーム','ja',defaultTtsConfig);s.player.stop();assert.equal(s.calls,2);assert.deepEqual(s.revoked,['blob:test-1','blob:test-2']);assert.ok(s.audios.every(a=>a.paused&&a.src===''));
+  await s.player.speak('B','フレーム','ja',defaultTtsConfig);s.player.stop();assert.equal(s.calls,1);assert.deepEqual(s.revoked,['blob:test-1','blob:test-2']);assert.ok(s.audios.every(a=>a.paused&&a.src===''));
+  await s.player.speak('B','フレーム!','ja',defaultTtsConfig);s.player.stop();assert.equal(s.calls,2);
+  await s.player.speak('B','フレーム!','ja',{...defaultTtsConfig,voices:{...defaultTtsConfig.voices,ja:'jm_kumo'}});s.player.stop();assert.equal(s.calls,3);
 });
 test('late speech cannot start after cancel, changing cells or changing the text', async () => {
   let release!:(blob:Blob)=>void;const s=playerSetup(async()=>new Promise(r=>release=r));

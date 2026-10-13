@@ -34,6 +34,8 @@ export class SpeechPlayer {
   private url?: string;
   private spoken?: { key: string; text: string; language: SpokenLanguage };
   private native?:SpeechSynthesisUtterance;
+  // One transient blob for immediate replay; permanent caching belongs to Server.
+  private replay?:{signature:string;blob:Blob};
   private dependencies: Dependencies;
   constructor(dependencies: Partial<Dependencies> = {}) {
     this.dependencies = { synthesize: synthesizeSpeech, audio: () => new Audio(), createUrl: blob => URL.createObjectURL(blob), revokeUrl: url => URL.revokeObjectURL(url), timeout: 100000, ...dependencies };
@@ -58,17 +60,19 @@ export class SpeechPlayer {
       this.update({key,phase:'playing'});try{speechSynthesis.speak(utterance);}catch{this.native=undefined;this.spoken=undefined;this.update({key,phase:'error',message:'浏览器无法开始朗读，请检查系统音色'});}return;
     }
     const controller = new AbortController(); this.controller = controller; this.spoken = { key, text, language };
+    const signature=JSON.stringify([config.provider,config.url,config.model,config.voices[language],language,config.speed,text.trim()]);
     this.update({ key, phase: 'loading' });
     let timedOut = false;
     const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, this.dependencies.timeout);
     const abortFailure = new Promise<never>((_, reject) => controller.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }));
     try {
-      const blob = await Promise.race([this.dependencies.synthesize(text, language, config, controller.signal), abortFailure]);
+      const blob = this.replay?.signature===signature?this.replay.blob:await Promise.race([this.dependencies.synthesize(text, language, config, controller.signal), abortFailure]);
       if (generation !== this.generation || controller.signal.aborted) return;
+      this.replay={signature,blob};
       clearTimeout(timeout);
       this.audio = this.dependencies.audio(); this.url = this.dependencies.createUrl(blob); this.audio.src = this.url;
       this.audio.onended = () => { if (generation === this.generation) { this.releaseAudio(); this.spoken = undefined; this.update({ phase: 'idle' }); } };
-      this.audio.onerror = () => { if (generation === this.generation) { this.releaseAudio(); this.spoken = undefined; this.update({ key, phase: 'error', message: '浏览器无法播放这段音频，请重试' }); } };
+      this.audio.onerror = () => { if (generation === this.generation) { this.replay=undefined;this.releaseAudio(); this.spoken = undefined; this.update({ key, phase: 'error', message: '浏览器无法播放这段音频，请重试' }); } };
       await this.play(generation);
     } catch (error) {
       if (generation === this.generation) { this.releaseAudio(); this.spoken = undefined; this.update({ key, phase: 'error', message: timedOut ? 'TTS 请求超时，已停止；请检查所选服务或缩短文字' : error instanceof Error ? error.message : '朗读失败，请重试' }); }
@@ -80,7 +84,7 @@ export class SpeechPlayer {
     catch (error) {
       if (generation !== this.generation || this.audio !== audio) return;
       if ((error as Error)?.name === 'NotAllowedError') this.update({ key: this.state.key, phase: 'ready', message: '浏览器需要再次点击播放' });
-      else { this.releaseAudio(); this.spoken = undefined; this.update({ key: this.state.key, phase: 'error', message: '音频播放失败，请重试' }); }
+      else { this.replay=undefined;this.releaseAudio(); this.spoken = undefined; this.update({ key: this.state.key, phase: 'error', message: '音频播放失败，请重试' }); }
     }
   }
   resume = () => this.play(this.generation);

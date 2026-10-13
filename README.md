@@ -58,6 +58,8 @@ GitHub Actions 在 main、版本标签、PR 和手动触发时构建测试 Serve
 
 长期规范见 [AGENTS.md](AGENTS.md)，变更见[更新记录](CHANGELOG.md)。
 
+Server 的所有 TTS 朗读共用持久化音频缓存，跨设备、刷新和容器更新复用相同文本及合成参数，避免重复调用。位置、命中日志、空间查看和清理命令见 [TTS 缓存说明](docs/tts-cache.md)。Web 保持浏览器朗读方式。
+
 ## Markdown 列（开发中）
 
 在列设置的“内容显示”中选择 Markdown。默认纯文本，已有工作簿无需迁移。

@@ -59,10 +59,12 @@
 .desktop-cell-actions button {min-width:30px;min-height:30px;padding:6px;font-size:12px;}
 .desktop-cell-actions .cell-history {display:flex;align-items:center;gap:6px;height:26px;margin:0 0 0 auto;font-size:12px;}
 .desktop-cell-actions .cell-history button {min-width:26px;min-height:26px;padding:4px;}
+.desktop-cell-actions .cell-edit {color:#7183a1;min-width:28px;min-height:28px;padding:5px;}
+.desktop-cell-actions .cell-edit:hover {color:var(--blue);background:#edf2fa;}
 .desktop-cell-actions .input-caption {display:none;}
 .desktop-cell-actions .cell-error,.desktop-cell-actions .retry-note {overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin:0;padding:0;font-size:11px;line-height:16px;}
 .virtual-row-spacer,.virtual-row-spacer td {padding:0!important;border:0!important;line-height:0;}
-.desktop-row-navigation {position:fixed;right:24px;bottom:20px;z-index:20;display:flex;gap:8px;padding:8px;border:1px solid var(--line);border-radius:10px;background:white;box-shadow:0 2px 12px #0002;}
+.desktop-row-navigation {position:fixed;right:24px;bottom:max(20px,env(safe-area-inset-bottom,0px));z-index:15;display:flex;gap:8px;padding:8px;border:1px solid var(--line);border-radius:10px;background:white;box-shadow:0 2px 12px #0002;}
 
 
 .desktop-table-scroll td.row-number {padding-top:8px;}

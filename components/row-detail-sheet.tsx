@@ -1,12 +1,12 @@
 'use client';
 import {MarkdownContent} from './markdown-content';
+import {useRowCarousel} from '../hooks/use-row-carousel';
 
 import { MAX_SHEET_ROWS } from '../core/types';
-'use client';
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Play, Plus, Save, Square, Trash2, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Scheduler } from '../core/scheduler';
-import type { Column, Status } from '../core/types';
+import type { Column, Row, Status } from '../core/types';
 import { CompactCellActions, CompactCellFeedback, type CellActionProps } from './cell-actions';
 import { MobileStatusIcon } from './mobile-status-icon';
 
@@ -23,12 +23,12 @@ function TextEditor({ value, label, onChange, onFocus }: { value: string; label:
     area.current.style.height = `${Math.max(46, area.current.scrollHeight)}px`;
   }, [value]);
   return <textarea ref={area} aria-label={label} rows={1} maxLength={32000} value={value}
-    onChange={event => onChange(event.target.value)} onFocus={onFocus} placeholder="在此列填写内容…"/>;
+    onChange={event => onChange(event.target.value)} onFocus={()=>{onFocus?.();area.current?.closest('article')?.scrollIntoView({block:'nearest'});}} placeholder="在此列填写内容…"/>;
 }
 
-export function RowDetailSheet({ engine, selection, message, revision, suspended, onClose, onSelect, onSubmit, onSaveDraft, onInputColumn, onRemove, onMove, actions }: {
-  engine: Scheduler; selection: { rowId: string | null; columnId: string; afterRowId?: string }; message: string; revision: number; suspended: boolean;
-  onClose: () => void; onSelect: (rowId: string | null, columnId: string, afterRowId?: string) => void;
+export function RowDetailSheet({ engine, selection, message, revision, suspended, mobile, onClose, onSelect, onSubmit, onSaveDraft, onInputColumn, onRemove, onMove, actions }: {
+  engine: Scheduler; selection: { rowId: string | null; columnId: string; afterRowId?: string; editColumnId?: string }; message: string; revision: number; suspended: boolean;
+  mobile:boolean; onClose: () => void; onSelect: (rowId: string | null, columnId: string, afterRowId?: string) => void;
   onSubmit: (values: Record<string, string>) => boolean;
   onSaveDraft: (values: Record<string, string>) => string | null; onInputColumn: (columnId: string) => void;
   onRemove: (rowId: string) => void; onMove: (rowId: string, delta: number) => void;
@@ -37,9 +37,12 @@ export function RowDetailSheet({ engine, selection, message, revision, suspended
   const sheet = engine.sheet, rowIndex = sheet.rows.findIndex(item => item.id === selection.rowId), row = sheet.rows[rowIndex];
   const isNew = selection.rowId === null;
   const [values, setValues] = useState<Record<string, string>>({});
-  const [editing, setEditing] = useState<Set<string>>(new Set());
+  const [editing, setEditing] = useState<Set<string>>(() => new Set(selection.editColumnId ? [selection.editColumnId] : []));
   const [removeConfirm, setRemoveConfirm] = useState(false);
   const [locked, setLocked] = useState(false), [entryVersion, setEntryVersion] = useState(0);
+  const selectionKey=JSON.stringify([selection.rowId,selection.editColumnId]);
+  const [entryKey,setEntryKey]=useState(selectionKey);
+  if(entryKey!==selectionKey){setEntryKey(selectionKey);setValues({});setEditing(new Set(selection.editColumnId?[selection.editColumnId]:[]));setRemoveConfirm(false);}
   const content = useRef<HTMLDivElement>(null), panel = useRef<HTMLElement>(null);
   const submitting = useRef(false), release = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const dirty = Object.values(values).some(value => value.trim());
@@ -47,6 +50,8 @@ export function RowDetailSheet({ engine, selection, message, revision, suspended
   const currentStatus = row?.cells ? Object.values(row.cells) : [];
   const rowBusy = currentStatus.some(cell => cell.status === 'queued' || cell.status === 'running');
   const rowState: Status = (['running', 'queued', 'error', 'stale', 'cancelled'] as const).find(status => currentStatus.some(cell => cell.status === status)) ?? (currentStatus.length && currentStatus.every(cell => cell.status === 'done') ? 'done' : 'idle');
+  const previous=sheet.rows[rowIndex-1],next=sheet.rows[rowIndex+1];
+  const {viewportRef,trackRef,neighbors,busy:navigating,navigate,handlers}=useRowCarousel({enabled:mobile&&!isNew&&!suspended&&!removeConfirm,rowId:selection.rowId,previousId:previous?.id,nextId:next?.id,onNavigate:id=>onSelect(id,selection.columnId)});
 
   function withLock(action: () => void) {
     if (submitting.current) return;
@@ -70,7 +75,7 @@ export function RowDetailSheet({ engine, selection, message, revision, suspended
   }
   function nextRow() {
     if (isNew) { openNew(); return; }
-    if (rowIndex < sheet.rows.length - 1) onSelect(sheet.rows[rowIndex + 1].id, selection.columnId);
+    navigate(1);
   }
   function submit() {
     if (rowBusy || (isNew && !dirty)) return;
@@ -80,6 +85,14 @@ export function RowDetailSheet({ engine, selection, message, revision, suspended
     if (isNew) setValues(current => ({ ...current, [column.id]: value }));
     else if (row) engine.edit(row.id, column.id, value);
   }
+  useEffect(()=>{if(!isNew&&!row)onClose();},[isNew,row,onClose]);
+  useLayoutEffect(()=>{
+    if(!neighbors)return;
+    panel.current?.querySelectorAll<HTMLElement>('.row-detail-preview').forEach(page=>{
+      const card=page.querySelector<HTMLElement>(`[data-preview-column-id="${selection.columnId}"]`);
+      if(card)page.scrollTop=card.getBoundingClientRect().top-page.getBoundingClientRect().top+page.scrollTop-8;
+    });
+  },[neighbors,selection.columnId]);
 
   useEffect(() => {
     const oldOverflow = document.body.style.overflow;
@@ -93,13 +106,14 @@ export function RowDetailSheet({ engine, selection, message, revision, suspended
       onClose();
     });
   });
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (suspended) return;
-    const card = content.current?.querySelector<HTMLElement>(`[data-column-id="${selection.columnId}"]`);
-    card?.scrollIntoView({ block: 'start', behavior: 'instant' });
-    if (isNew) card?.querySelector<HTMLTextAreaElement>('textarea')?.focus({ preventScroll: true });
+    const card = content.current?.querySelector<HTMLElement>(`[data-column-id="${selection.editColumnId ?? selection.columnId}"]`);
+    const page=content.current;
+    if(card&&page)page.scrollTop=card.getBoundingClientRect().top-page.getBoundingClientRect().top+page.scrollTop-8;
+    if (isNew || selection.editColumnId) card?.querySelector<HTMLTextAreaElement>('textarea')?.focus({ preventScroll: true });
     else panel.current?.focus({ preventScroll: true });
-  }, [selection.rowId, selection.columnId, isNew, entryVersion, suspended]);
+  }, [selection.rowId, selection.columnId, selection.editColumnId, isNew, entryVersion, suspended]);
   useEffect(() => {
     if (removeConfirm) {
       content.current?.scrollTo({ top: 0, behavior: 'instant' });
@@ -130,14 +144,31 @@ export function RowDetailSheet({ engine, selection, message, revision, suspended
     return () => { viewport?.removeEventListener('resize', update); viewport?.removeEventListener('scroll', update); };
   }, []);
 
+  function renderCards(displayRow:Row|undefined,displayIndex:number,preview=false){
+    return sheet.columns.map((column,index)=>{
+      const cell=displayRow?.cells[column.id],text=isNew?values[column.id]??'':cell?.preview??cell?.value??'';
+      const active=selection.columnId===column.id,isEditing=!preview&&editing.has(column.id);
+      return <article className={'row-detail-card'+(active?' selected-column':'')+(isEditing?' editing':'')} key={column.id} data-column-id={preview?undefined:column.id} data-preview-column-id={preview?column.id:undefined} aria-label={`${columnLetter(index)} 列 ${column.name}`}>
+        <div className="row-card-heading"><span className="column-letter">{columnLetter(index)}</span><h3>{column.name}</h3>
+          {cell&&<MobileStatusIcon status={cell.status} error={cell.error} interactive={!preview}/>}
+          {!preview&&!isNew&&displayRow&&<CompactCellActions {...actions} engine={engine} row={displayRow} column={column} rowIndex={displayIndex} columnIndex={index}/>}
+          {!preview&&!isNew&&<button className="row-card-edit" aria-label={`${isEditing?'完成编辑':'编辑'} ${column.name}`} title={`${isEditing?'完成编辑':'编辑'} ${column.name}`} onClick={()=>setEditing(current=>{const result=new Set(current);if(result.has(column.id))result.delete(column.id);else result.add(column.id);return result;})}>{isEditing?<Save size={18}/>:<Pencil size={18}/>}</button>}
+        </div>
+        {isNew||isEditing?<TextEditor label={`填写 ${column.name}`} value={text} onChange={value=>edit(column,value)} onFocus={()=>onInputColumn(column.id)}/>
+          :<div className={'row-card-text'+(!text?' placeholder':'')}>{text?column.displayMode==='markdown'?<MarkdownContent text={text}/>:text:'尚无内容，点击编辑填写'}</div>}
+        {!preview&&!isNew&&displayRow&&<CompactCellFeedback row={displayRow} column={column} speech={actions.speech}/>}
+        {isEditing&&<small className="row-autosave">修改即时保存；上游改动会让下游需要更新。</small>}
+      </article>;
+    });
+  }
   return <div className="row-detail-backdrop" onClick={event => { if (event.target === event.currentTarget && !suspended) requestClose.current(); }}>
     <section ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="row-detail-title" className="row-detail-sheet" data-revision={revision} inert={suspended}>
       <header className="row-detail-header">
         <div className="row-detail-title"><small>{sheet.name || '未命名表格'}</small><h2 id="row-detail-title">{isNew ? '新建行' : `第 ${rowIndex + 1} 行`}</h2>{!isNew && <MobileStatusIcon status={rowState} interactive/>}</div>
         <nav className="row-detail-nav" aria-label="行操作">
-          <button aria-label="上一行" disabled={isNew || rowIndex <= 0} onClick={() => onSelect(sheet.rows[rowIndex - 1].id, selection.columnId)}><ChevronLeft size={21}/></button>
-          <button aria-label="下一行" disabled={locked || (!isNew && rowIndex >= sheet.rows.length - 1) || (isNew && sheet.rows.length >= MAX_SHEET_ROWS)} onClick={nextRow}><ChevronRight size={21}/></button>
-          <button aria-label="新增行" title={isNew ? '保存并继续新增' : '在当前行下方插入'} disabled={locked || sheet.rows.length >= MAX_SHEET_ROWS} onClick={openNew}><Plus size={20}/></button>
+          <button aria-label="上一行" disabled={navigating || isNew || rowIndex <= 0} onClick={() => navigate(-1)}><ChevronLeft size={21}/></button>
+          <button aria-label="下一行" disabled={navigating || locked || (!isNew && rowIndex >= sheet.rows.length - 1) || (isNew && sheet.rows.length >= MAX_SHEET_ROWS)} onClick={nextRow}><ChevronRight size={21}/></button>
+          <button aria-label="新增行" title={isNew ? '保存并继续新增' : '在当前行下方插入'} disabled={navigating || locked || sheet.rows.length >= MAX_SHEET_ROWS} onClick={openNew}><Plus size={20}/></button>
           <details className="row-detail-more"><summary aria-label="更多行操作"><MoreHorizontal size={20}/></summary><div>
             {!isNew && row && <><button disabled={rowIndex <= 0} onClick={event => { onMove(row.id, -1); event.currentTarget.closest('details')?.removeAttribute('open'); }}><ArrowUp size={16}/>上移此行</button><button disabled={rowIndex >= sheet.rows.length - 1} onClick={event => { onMove(row.id, 1); event.currentTarget.closest('details')?.removeAttribute('open'); }}><ArrowDown size={16}/>下移此行</button><button onClick={event => { setRemoveConfirm(true); event.currentTarget.closest('details')?.removeAttribute('open'); }}><Trash2 size={16}/>删除此行</button></>}
             {engine.busy && <button onClick={event => { engine.stop(); event.currentTarget.closest('details')?.removeAttribute('open'); }}><Square size={16}/>停止全部任务</button>}
@@ -146,30 +177,19 @@ export function RowDetailSheet({ engine, selection, message, revision, suspended
           <button aria-label="关闭行详情" disabled={locked} onClick={() => requestClose.current()}><X size={22}/></button>
         </nav>
       </header>
-      <div className="row-detail-content" ref={content}>
+      <div className={'row-detail-carousel'+(mobile?' mobile-carousel':'')} ref={viewportRef} {...handlers}>
+      <div className="row-detail-track" ref={trackRef}>
+      <div className="row-detail-content row-detail-preview" aria-hidden="true" inert>{neighbors&&previous&&renderCards(previous,rowIndex-1,true)}</div>
+      <div className="row-detail-content row-detail-current" ref={content} key={selection.rowId??'new'} inert={navigating}>
         {message && <p role="alert" className="row-draft-confirm">{message}</p>}
         {removeConfirm && row && <div className="row-draft-confirm" role="alert"><strong>删除这一行及其全部结果和历史？</strong><div>
           <button className="button danger" onClick={() => onRemove(row.id)}>确认删除此行</button><button className="button" onClick={() => setRemoveConfirm(false)}>保留此行</button>
         </div></div>}
-        {sheet.columns.map((column, index) => {
-          const cell = row?.cells[column.id], text = isNew ? values[column.id] ?? '' : cell?.preview ?? cell?.value ?? '';
-          const active = selection.columnId === column.id;
-          return <article className={'row-detail-card' + (active ? ' selected-column' : '') + (editing.has(column.id) ? ' editing' : '')} key={column.id} data-column-id={column.id} aria-label={`${columnLetter(index)} 列 ${column.name}`}>
-            <div className="row-card-heading"><span className="column-letter">{columnLetter(index)}</span><h3>{column.name}</h3>
-              {cell && <MobileStatusIcon status={cell.status} error={cell.error} interactive/>}
-              {!isNew && row && <CompactCellActions {...actions} engine={engine} row={row} column={column} rowIndex={rowIndex} columnIndex={index}/>}
-              {!isNew && <button className="row-card-edit" aria-label={`${editing.has(column.id) ? '完成编辑' : '编辑'} ${column.name}`} title={`${editing.has(column.id) ? '完成编辑' : '编辑'} ${column.name}`} onClick={() => setEditing(current => { const next = new Set(current); if (next.has(column.id)) next.delete(column.id); else next.add(column.id); return next; })}>
-                {editing.has(column.id) ? <Save size={18}/> : <Pencil size={18}/>}
-              </button>}
-            </div>
-            {isNew || editing.has(column.id) ? <TextEditor label={`填写 ${column.name}`} value={text} onChange={value => edit(column, value)} onFocus={() => { onInputColumn(column.id); content.current?.querySelector(`[data-column-id="${column.id}"]`)?.scrollIntoView({ block: 'nearest' }); }}/>
-              : <div className={'row-card-text' + (!text ? ' placeholder' : '')}>{text ? column.displayMode==='markdown'?<MarkdownContent text={text}/>:text : '尚无内容，点击编辑填写'}</div>}
-            {!isNew && row && <CompactCellFeedback row={row} column={column} speech={actions.speech}/>}
-            {!isNew && editing.has(column.id) && <small className="row-autosave">修改即时保存；上游改动会让下游需要更新。</small>}
-          </article>;
-        })}
+        {renderCards(row,rowIndex)}
       </div>
-      <footer className="row-detail-footer"><button className="button primary" disabled={locked || rowBusy || (isNew && !dirty)} onClick={submit}><Play size={17}/>运行</button></footer>
+      <div className="row-detail-content row-detail-preview" aria-hidden="true" inert>{neighbors&&next&&renderCards(next,rowIndex+1,true)}</div>
+      </div></div>
+      <footer className="row-detail-footer"><button className="button primary" disabled={navigating || locked || rowBusy || (isNew && !dirty)} onClick={submit}><Play size={17}/>运行</button></footer>
     </section>
   </div>;
 }

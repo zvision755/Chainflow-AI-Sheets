@@ -1,6 +1,7 @@
 'use client';
 import {createContext,useContext,useRef,useLayoutEffect,useState,useMemo,Fragment,type ReactNode,type CSSProperties} from 'react';
 import {useWindowVirtualizer} from '@tanstack/react-virtual';
+import {createPortal} from 'react-dom';
 import type {Row,Column} from '../core/types';
 import {DESKTOP_COLUMN_WIDTH,DESKTOP_ROW_HEIGHT} from '../core/overview-layout';
 type ScrollApi={element:HTMLDivElement|null};
@@ -9,7 +10,8 @@ export function DesktopTableScroll({count,children}:{count:number;children:React
  const [element,setElement]=useState<HTMLDivElement|null>(null);
  const api=useMemo<ScrollApi>(()=>({element}),[element]);
  function jump(index:number){const body=element?.querySelector('tbody');if(body)window.scrollTo({top:Math.max(0,body.getBoundingClientRect().top+window.scrollY+index*DESKTOP_ROW_HEIGHT-(index===0?0:window.innerHeight-DESKTOP_ROW_HEIGHT)),behavior:'instant'});}
- return <ScrollContext.Provider value={api}><div ref={setElement} className="table-scroll desktop-table-scroll" style={{'--desktop-column-width':DESKTOP_COLUMN_WIDTH+'px'} as CSSProperties}>{children}</div>{count>50&&<nav className="desktop-row-navigation" aria-label="表格行导航"><button className="button" onClick={()=>jump(0)}>回到首行</button><button className="button" onClick={()=>jump(count-1)}>跳到末行</button></nav>}</ScrollContext.Provider>;
+ const navigation=typeof document!=='undefined'?createPortal(<nav className="desktop-row-navigation" aria-label="表格行导航"><button className="button" disabled={!count} onClick={()=>jump(0)}>回到首行</button><button className="button" disabled={!count} onClick={()=>jump(count-1)}>跳到末行</button></nav>,document.body):null;
+ return <ScrollContext.Provider value={api}><div ref={setElement} className="table-scroll desktop-table-scroll" style={{'--desktop-column-width':DESKTOP_COLUMN_WIDTH+'px'} as CSSProperties}>{children}</div>{navigation}</ScrollContext.Provider>;
 }
 export function DesktopRows({rows,columns,children}:{rows:Row[];columns:Column[];children:(row:Row,index:number,measure:undefined)=>ReactNode}){
  const api=useContext(ScrollContext),body=useRef<HTMLTableSectionElement>(null);
